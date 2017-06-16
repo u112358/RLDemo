@@ -49,7 +49,7 @@ class QLearningTable:
 if __name__ == "__main__":
     rubik = Rubik()
     RL = QLearningTable(actions=list(range(rubik.n_actions)))
-    for episode in range(100):
+    for episode in range(10000):
         # initial observation
         state = rubik.state
         while True:
@@ -77,3 +77,4 @@ if __name__ == "__main__":
                 rubik.reset()
                 rubik.update_rubik()
                 break
+    RL.q_table.to_csv('q_table.csv')
