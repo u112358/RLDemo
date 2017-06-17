@@ -11,6 +11,9 @@ class QLearningTable:
         self.epsilon = e_greedy
         self.q_table = pd.DataFrame(columns=self.actions)
 
+    def load_experience(self,dir):
+        self.q_table = pd.read_csv(dir,index_col=0)
+
     def choose_action(self, observation):
         self.check_state_exist(observation)
         # action selection
@@ -20,6 +23,7 @@ class QLearningTable:
             state_action = state_action.reindex(
                 np.random.permutation(state_action.index))  # some actions have same value
             action = state_action.argmax()
+            action = int(action)
         else:
             # choose random action
             action = np.random.choice(self.actions)
@@ -49,6 +53,8 @@ class QLearningTable:
 if __name__ == "__main__":
     rubik = Rubik()
     RL = QLearningTable(actions=list(range(rubik.n_actions)))
+    # RL.load_experience('./q_table_100000.csv')
+    success=0
     for episode in range(100000):
         # initial observation
         state = rubik.state
@@ -67,14 +73,16 @@ if __name__ == "__main__":
             state = state_
             # break while loop when end of this episode
             if done:
-                print 'Solved!'
-                print RL.q_table
+                print '[Episode %d] Solved with complete: %d' %(episode,reward)
+                success+=1
+                # print RL.q_table
                 rubik.reset()
-                rubik.update_rubik()
+                # rubik.update_rubik()
                 break
             if rubik.count == 200:
-                print 'reach the max movements'+ str(rubik.count)
+                print '[Episode %d] Reached the max movements ' %(episode)
                 rubik.reset()
-                rubik.update_rubik()
+                # rubik.update_rubik()
                 break
-    RL.q_table.to_csv('q_table.csv')
+    print success
+    RL.q_table.to_csv('q_table_2.csv')

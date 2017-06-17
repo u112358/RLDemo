@@ -41,9 +41,9 @@ left_bottom = 3
 class Rubik():
     def __init__(self):
         # for the whole rubik, surface are indexed by
-        self.action_space = ['t1','t2','t3','r1','r2','r3','f1','f2','f3']
+        self.action_space = ['t1', 't2', 't3', 'r1', 'r2', 'r3', 'f1', 'f2', 'f3']
         self.n_actions = len(self.action_space)
-        self.count=0
+        self.count = 0
         self.surface = [[0 for x in range(4)] for y in range(6)]
         # self.surface[front] = ['r', 'r', 'b', 'w']
         # self.surface[right] = ['w', 'g', 'm', 'm']
@@ -60,7 +60,7 @@ class Rubik():
         # points = np.array(list(product(r, r, r)))
         # self.points = np.delete(points, 13, 0)
         # self.ax = Axes3D(self.fig)
-        self.update_rubik()
+        # self.update_rubik()
 
     def reset(self):
         self.surface[front] = ['w', 'g', 'g', 'b']
@@ -69,47 +69,47 @@ class Rubik():
         self.surface[back] = ['b', 'm', 'b', 'w']
         self.surface[left] = ['y', 'b', 'y', 'w']
         self.surface[bottom] = ['m', 'y', 'g', 'm']
-        self.state = np.squeeze(np.reshape(self.surface,24))
-        self.count=0
-        #self.update_rubik()
+        self.state = np.squeeze(np.reshape(self.surface, 24))
+        self.count = 0
+        # self.update_rubik()
+
     def take_action(self, action):
 
-        if action == 0:   # top 1
+        if action == 0:  # top 1
             self.twist_top()
-            print 't1 ',
-        elif action == 1:   # top 2
+            # print 't1 ',
+        elif action == 1:  # top 2
             self.twist_top_n(2)
-            print 't2 ',
-        elif action == 2:   # top 3
+            # print 't2 ',
+        elif action == 2:  # top 3
             self.twist_top_n(3)
-            print 't3 ',
+            # print 't3 ',
         elif action == 3:  # right 1
             self.twist_right()
-            print 'r1 ',
+            # print 'r1 ',
         elif action == 4:  # right 2
             self.twist_right_n(2)
-            print 'r2 ',
+            # print 'r2 ',
         elif action == 5:  # right 3
             self.twist_right_n(3)
-            print 'r3 ',
+            # print 'r3 ',
         elif action == 6:  # front 1
             self.twist_front()
-            print 'f1 ',
+            # print 'f1 ',
         elif action == 7:  # front 2
             self.twist_front_n(2)
-            print 'f2 ',
+            # print 'f2 ',
         elif action == 8:  # front 3
             self.twist_front_n(3)
-            print 'f3 ',
-        self.count+=1
+            # print 'f3 ',
+        self.count += 1
         s_ = self.state  # next state
 
         # reward function
-        if check(s_):
-            reward = 1
+        reward = check(s_)
+        if reward>1:
             done = True
         else:
-            reward = 0
             done = False
 
         return s_, reward, done
@@ -136,8 +136,8 @@ class Rubik():
         self.surface[right][left_bottom] = previous[right][right_bottom]
 
         del previous
-        self.state = np.squeeze(np.reshape(self.surface,24))
-        self.update_rubik()
+        self.state = np.squeeze(np.reshape(self.surface, 24))
+        # self.update_rubik()
 
     def twist_right_n(self, k):
         for _ in range(k):
@@ -165,8 +165,8 @@ class Rubik():
 
         del previous
 
-        self.state = np.squeeze(np.reshape(self.surface,24))
-        self.update_rubik()
+        self.state = np.squeeze(np.reshape(self.surface, 24))
+        # self.update_rubik()
 
     def twist_top_n(self, k):
         for _ in range(k):
@@ -194,8 +194,8 @@ class Rubik():
 
         del previous
 
-        self.state = np.squeeze(np.reshape(self.surface,24))
-        self.update_rubik()
+        self.state = np.squeeze(np.reshape(self.surface, 24))
+        # self.update_rubik()
 
     def twist_front_n(self, k):
         for _ in range(k):
@@ -203,214 +203,217 @@ class Rubik():
 
     def update_rubik(self):
 
-        # for s, e in combinations(self.points, 2):
-        #     if np.sum(np.abs(s - e)) == 1:
-        #         self.ax.plot3D(*zip(s, e), color="k")
-        # # front
-        # x = [-0, -0, -1, -1]
-        # y = [-1, -1, -1, -1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[front][left_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 0, -1, -1]
-        # y = [-1, -1, -1, -1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[front][left_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 0, 1, 1]
-        # y = [-1, -1, -1, -1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[front][right_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 0, 1, 1]
-        # y = [-1, -1, -1, -1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[front][right_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # # back
-        #
-        # x = [0, 0, -1, -1]
-        # y = [1, 1, 1, 1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[back][right_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 0, -1, -1]
-        # y = [1, 1, 1, 1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[back][right_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 0, 1, 1]
-        # y = [1, 1, 1, 1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[back][left_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 0, 1, 1]
-        # y = [1, 1, 1, 1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[back][left_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # # right
-        # x = [1, 1, 1, 1]
-        # y = [0, 0, -1, -1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[right][left_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [1, 1, 1, 1]
-        # y = [0, 0, 1, 1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[right][right_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [1, 1, 1, 1]
-        # y = [0, 0, -1, -1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[right][left_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [1, 1, 1, 1]
-        # y = [0, 0, 1, 1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[right][right_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # # left
-        # x = [-1, -1, -1, -1]
-        # y = [0, 0, -1, -1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[left][right_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [-1, -1, -1, -1]
-        # y = [0, 0, 1, 1]
-        # z = [0, 1, 1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[left][left_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [-1, -1, -1, -1]
-        # y = [0, 0, -1, -1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[left][right_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [-1, -1, -1, -1]
-        # y = [0, 0, 1, 1]
-        # z = [0, -1, -1, 0]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[left][left_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # # top
-        # x = [0, -1, -1, 0]
-        # y = [0, 0, 1, 1]
-        # z = [1, 1, 1, 1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[top][left_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 1, 1, 0]
-        # y = [0, 0, 1, 1]
-        # z = [1, 1, 1, 1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[top][right_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 1, 1, 0]
-        # y = [0, 0, -1, -1]
-        # z = [1, 1, 1, 1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[top][right_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, -1, -1, 0]
-        # y = [0, 0, -1, -1]
-        # z = [1, 1, 1, 1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[top][left_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # # bottom
-        # x = [0, -1, -1, 0]
-        # y = [0, 0, 1, 1]
-        # z = [-1, -1, -1, -1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[bottom][left_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 1, 1, 0]
-        # y = [0, 0, 1, 1]
-        # z = [-1, -1, -1, -1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[bottom][right_bottom])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, 1, 1, 0]
-        # y = [0, 0, -1, -1]
-        # z = [-1, -1, -1, -1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[bottom][right_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # x = [0, -1, -1, 0]
-        # y = [0, 0, -1, -1]
-        # z = [-1, -1, -1, -1]
-        # verts = [zip(x, y, z)]
-        # rect = Poly3DCollection(verts)
-        # rect.set_color(self.surface[bottom][left_top])
-        # self.ax.add_collection3d(rect)
-        #
-        # self.fig.canvas.draw()
-        return
+        for s, e in combinations(self.points, 2):
+            if np.sum(np.abs(s - e)) == 1:
+                self.ax.plot3D(*zip(s, e), color="k")
+        # front
+        x = [-0, -0, -1, -1]
+        y = [-1, -1, -1, -1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[front][left_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 0, -1, -1]
+        y = [-1, -1, -1, -1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[front][left_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 0, 1, 1]
+        y = [-1, -1, -1, -1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[front][right_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 0, 1, 1]
+        y = [-1, -1, -1, -1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[front][right_bottom])
+        self.ax.add_collection3d(rect)
+
+        # back
+
+        x = [0, 0, -1, -1]
+        y = [1, 1, 1, 1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[back][right_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 0, -1, -1]
+        y = [1, 1, 1, 1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[back][right_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 0, 1, 1]
+        y = [1, 1, 1, 1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[back][left_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 0, 1, 1]
+        y = [1, 1, 1, 1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[back][left_bottom])
+        self.ax.add_collection3d(rect)
+
+        # right
+        x = [1, 1, 1, 1]
+        y = [0, 0, -1, -1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[right][left_top])
+        self.ax.add_collection3d(rect)
+
+        x = [1, 1, 1, 1]
+        y = [0, 0, 1, 1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[right][right_top])
+        self.ax.add_collection3d(rect)
+
+        x = [1, 1, 1, 1]
+        y = [0, 0, -1, -1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[right][left_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [1, 1, 1, 1]
+        y = [0, 0, 1, 1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[right][right_bottom])
+        self.ax.add_collection3d(rect)
+
+        # left
+        x = [-1, -1, -1, -1]
+        y = [0, 0, -1, -1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[left][right_top])
+        self.ax.add_collection3d(rect)
+
+        x = [-1, -1, -1, -1]
+        y = [0, 0, 1, 1]
+        z = [0, 1, 1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[left][left_top])
+        self.ax.add_collection3d(rect)
+
+        x = [-1, -1, -1, -1]
+        y = [0, 0, -1, -1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[left][right_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [-1, -1, -1, -1]
+        y = [0, 0, 1, 1]
+        z = [0, -1, -1, 0]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[left][left_bottom])
+        self.ax.add_collection3d(rect)
+
+        # top
+        x = [0, -1, -1, 0]
+        y = [0, 0, 1, 1]
+        z = [1, 1, 1, 1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[top][left_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 1, 1, 0]
+        y = [0, 0, 1, 1]
+        z = [1, 1, 1, 1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[top][right_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 1, 1, 0]
+        y = [0, 0, -1, -1]
+        z = [1, 1, 1, 1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[top][right_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [0, -1, -1, 0]
+        y = [0, 0, -1, -1]
+        z = [1, 1, 1, 1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[top][left_bottom])
+        self.ax.add_collection3d(rect)
+
+        # bottom
+        x = [0, -1, -1, 0]
+        y = [0, 0, 1, 1]
+        z = [-1, -1, -1, -1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[bottom][left_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 1, 1, 0]
+        y = [0, 0, 1, 1]
+        z = [-1, -1, -1, -1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[bottom][right_bottom])
+        self.ax.add_collection3d(rect)
+
+        x = [0, 1, 1, 0]
+        y = [0, 0, -1, -1]
+        z = [-1, -1, -1, -1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[bottom][right_top])
+        self.ax.add_collection3d(rect)
+
+        x = [0, -1, -1, 0]
+        y = [0, 0, -1, -1]
+        z = [-1, -1, -1, -1]
+        verts = [zip(x, y, z)]
+        rect = Poly3DCollection(verts)
+        rect.set_color(self.surface[bottom][left_top])
+        self.ax.add_collection3d(rect)
+
+        self.fig.canvas.draw()
+        # return
+
+
 def check(s):
-    s = np.reshape(s,[6,4])
+    s = np.reshape(s, [6, 4])
+    complete = 0
     for i in range(6):
         u = np.unique(s[i])
         if np.size(u) == 1:
-            return True
-    return False
+            complete+=1
+    return complete
