@@ -97,7 +97,7 @@ visited during training.
 | all-actions, sample up to K+2 (`--k-margin 2`) | 6 | 100 % | 91 % | 38 % | 3.6 % | 2.0 % |
 | DeepCube-style: all depths, 1/k loss (`--k-start 11 --weight-by-depth`) | 6 | 100 % | 88 % | 42 % | 2.4 % | 1.5 % |
 | no curriculum, plain Q-learning (`--k-start 11`) | 6 | 75-100 % | 31 % | 7 % | 0.3 % | 0.3 % |
-NET_LONG_RUN_ROW
+| default, `--hidden 512`, 15 minutes | 15 | 100 % | 93 % | 44 % | 4.2 % | 3.8 % |
 
 Every variant reaches the same plateau: perfect up to four moves, then a
 fast fall-off. Two things were ruled out along the way (the code keeps the
