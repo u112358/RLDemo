@@ -26,7 +26,8 @@ What changed compared with the original demo and why:
 
 Usage::
 
-    python play_rubik.py train [--dashboard 8000]     # train, optional live page
+    python play_rubik.py train [--dashboard 8000]     # train the Q-table, optional live page
+    python play_rubik.py train --agent net [...]       # same learner with a neural network (see qnet.py)
     python play_rubik.py serve [--port 8000]           # pages + trained table, no training
     python play_rubik.py eval                          # success / length per depth
     python play_rubik.py solve wggbrymrgrwrbmbwybywmygm
@@ -47,7 +48,17 @@ CACHE = 'cache'
 Q_PATH = os.path.join(CACHE, 'q_table.npy')
 POLICY_PATH = os.path.join(CACHE, 'policy.npy')
 METRICS_PATH = os.path.join(CACHE, 'metrics.json')
+NET_PATH = os.path.join(CACHE, 'net.npz')
+NET_POLICY_PATH = os.path.join(CACHE, 'net_policy.npy')
+NET_METRICS_PATH = os.path.join(CACHE, 'net_metrics.json')
 MAX_DEPTH = 11
+
+
+def paths(agent):
+    """Cache files of an agent: 'table' (Q-table) or 'net' (neural network)."""
+    if agent == 'net':
+        return {'model': NET_PATH, 'policy': NET_POLICY_PATH, 'metrics': NET_METRICS_PATH}
+    return {'model': Q_PATH, 'policy': POLICY_PATH, 'metrics': METRICS_PATH}
 
 
 def scramble(T, rng, depths):
@@ -62,7 +73,9 @@ def scramble(T, rng, depths):
 
 
 def greedy_rollout(Q, T, s, max_steps=30):
-    """Follow argmax Q from states ``s``; returns solve length per state (-1 = failed)."""
+    """Follow argmax Q from states ``s``; returns solve length per state (-1 = failed).
+    ``Q`` is the (N, 9) table or a callable idx -> (n, 9) values."""
+    qf = Q if callable(Q) else (lambda idx: Q[idx])
     s = s.copy()
     length = np.full(s.shape[0], -1, dtype=np.int64)
     for t in range(max_steps):
@@ -70,7 +83,7 @@ def greedy_rollout(Q, T, s, max_steps=30):
         if not active.any():
             break
         idx = np.nonzero(active)[0]
-        a = np.argmax(Q[s[idx]], axis=1)
+        a = np.argmax(qf(s[idx]), axis=1)
         s[idx] = T[s[idx], a]
         just = idx[s[idx] == rb.SOLVED_INDEX]
         length[just] = t + 1
@@ -104,6 +117,13 @@ class Trainer:
         self.s = self._new_starts(np.arange(n_envs))
         self.age = np.zeros(n_envs, dtype=np.int64)
         self.trace = None                                # last transition of env 0, for the dashboard
+        self.policy_cache = None
+
+    def qvalues(self, idx):
+        return self.Q[idx]
+
+    def full_policy(self):
+        return np.argmax(self.Q, axis=1).astype(np.uint8)
 
     def _new_starts(self, which):
         # k random moves from solved, k in 1..K.  Once the curriculum is
@@ -180,16 +200,17 @@ class Trainer:
     def save(self):
         os.makedirs(CACHE, exist_ok=True)
         np.save(Q_PATH, self.Q)
-        np.save(POLICY_PATH, np.argmax(self.Q, axis=1).astype(np.uint8))
-        write_metrics(self.metrics)
+        self.policy_cache = self.full_policy()
+        np.save(POLICY_PATH, self.policy_cache)
+        write_metrics(self.metrics, METRICS_PATH)
 
 
-def write_metrics(metrics):
+def write_metrics(metrics, path):
     os.makedirs(CACHE, exist_ok=True)
-    tmp = METRICS_PATH + '.tmp'
+    tmp = path + '.tmp'
     with open(tmp, 'w') as f:
         json.dump({'config': CONFIG, 'records': metrics}, f)
-    os.replace(tmp, METRICS_PATH)
+    os.replace(tmp, path)
 
 
 CONFIG = {}
@@ -204,47 +225,77 @@ def pack_policy(policy):
 
 
 class Serving:
-    """Data behind the HTTP endpoints: live trainer, or the saved cache."""
+    """Data behind the HTTP endpoints: a live trainer, or the saved cache of one agent."""
 
-    def __init__(self, trainer=None):
+    def __init__(self, trainer=None, agent='table'):
         self.trainer = trainer
-        self.Q = self.policy = None
+        self.agent = agent
+        self.Q = self.policy = self.net = None
         self.records, self.config = [], {}
-        self._packed = None
+        self._packed, self._packed_at = None, 0.0
         if trainer is None:
-            if os.path.exists(METRICS_PATH):
-                with open(METRICS_PATH) as f:
+            pt = paths(agent)
+            if os.path.exists(pt['metrics']):
+                with open(pt['metrics']) as f:
                     m = json.load(f)
                 self.records, self.config = m.get('records', []), m.get('config', {})
-            if os.path.exists(Q_PATH):
-                self.Q = np.load(Q_PATH, mmap_mode='r')
-            elif os.path.exists(POLICY_PATH):
-                self.policy = np.load(POLICY_PATH, mmap_mode='r')
+            if agent == 'net':
+                if os.path.exists(NET_PATH):
+                    from qnet import MLP, onehot
+                    net = MLP.from_file(NET_PATH)
+                    self.net = lambda idx: net.forward(onehot(idx))
+                if os.path.exists(NET_POLICY_PATH):
+                    self.policy = np.load(NET_POLICY_PATH, mmap_mode='r')
+            else:
+                if os.path.exists(Q_PATH):
+                    self.Q = np.load(Q_PATH, mmap_mode='r')
+                elif os.path.exists(POLICY_PATH):
+                    self.policy = np.load(POLICY_PATH, mmap_mode='r')
+
+    def has_table(self):
+        return self.trainer is not None or self.Q is not None or self.policy is not None or self.net is not None
 
     def metrics(self):
         if self.trainer is not None:
             return {'config': CONFIG, 'records': self.trainer.metrics}
         return {'config': self.config, 'records': self.records}
 
+    def _qrow(self, idx):
+        if self.trainer is not None:
+            return np.asarray(self.trainer.qvalues(np.array([idx]))[0], dtype=np.float64)
+        if self.net is not None:
+            return np.asarray(self.net(np.array([idx]))[0], dtype=np.float64)
+        if self.Q is not None:
+            return np.asarray(self.Q[idx], dtype=np.float64)
+        return None
+
     def act(self, state):
-        """Greedy action of the current table for a 24-letter state."""
+        """Greedy action (and the Q row when available) for a 24-letter state."""
         idx = rb.encode(state)
-        Q = self.trainer.Q if self.trainer is not None else self.Q
-        if Q is not None:
-            row = np.asarray(Q[idx], dtype=np.float64)
+        row = self._qrow(idx)
+        if row is not None:
             best = np.nonzero(row == row.max())[0]
             a = int(np.random.choice(best))
             return {'index': int(idx), 'action': a, 'q': [round(float(v), 3) for v in row],
                     'unknown': bool(row.max() <= -(MAX_DEPTH + 1))}
         if self.policy is not None:
             return {'index': int(idx), 'action': int(self.policy[idx]), 'q': None, 'unknown': False}
-        raise RuntimeError('no table')
+        raise RuntimeError('no trained agent')
 
     def policy_bytes(self):
         if self.trainer is not None:
-            return pack_policy(np.argmax(self.trainer.Q, axis=1))
+            # a full policy of the network costs ~30 s; refresh at most once a minute
+            if self._packed is None or (self.trainer.policy_cache is None and time.time() - self._packed_at > 60):
+                pol = self.trainer.policy_cache if self.trainer.policy_cache is not None else self.trainer.full_policy()
+                self._packed, self._packed_at = pack_policy(pol), time.time()
+            return self._packed
         if self._packed is None:
-            src = self.policy if self.policy is not None else np.argmax(self.Q, axis=1)
+            if self.policy is not None:
+                src = self.policy
+            elif self.Q is not None:
+                src = np.argmax(self.Q, axis=1)
+            else:
+                raise RuntimeError('no policy')
             self._packed = pack_policy(src)
         return self._packed
 
@@ -303,39 +354,72 @@ def serve(port, serving):
 
 
 def fmt_row(rec):
-    return ('step %10d  %6.0fs  K=%2d  coverage %5.1f%%  success(random) %6.2f%%  Q-err %s  %s env-steps/s'
+    extra = ''
+    if rec.get('unseen_success') is not None:
+        extra = '  unseen %6.2f%%  loss %.3f' % (100 * rec['unseen_success'], rec['loss'] or 0)
+    return ('step %10d  %6.0fs  K=%2d  coverage %5.1f%%  success(random) %6.2f%%  Q-err %s  %s env-steps/s%s'
             % (rec['step'], rec['time'], rec['K'], 100 * rec['coverage'], 100 * rec['success_random'],
                '%.3f' % rec['q_error'] if rec['q_error'] is not None else '  n/a',
-               format(rec['sps'], ',')))
+               format(rec['sps'], ','), extra))
 
 
 def train(args):
     global CONFIG
+    if args.envs is None:
+        args.envs = 256 if args.agent == 'net' else 8192
+    if args.agent == 'net' and args.steps == 400_000_000:
+        args.steps = 40_000_000
+    if args.agent == 'net' and args.eval_every == 50:
+        args.eval_every = 200      # an evaluation costs ~0.7 s with the network
     CONFIG = {k: v for k, v in vars(args).items() if k != 'cmd'}
-    tr = Trainer(n_envs=args.envs, alpha=args.alpha, gamma=args.gamma, eps=args.eps,
-                 promote=args.promote, episode_cap=args.cap, eval_every=args.eval_every, seed=args.seed)
-    print('transition table + BFS ready, %d states, %d parallel environments' % (rb.N_STATES, args.envs))
+    pt = paths(args.agent)
+    if args.agent == 'net':
+        from qnet import NetTrainer
+        tr = NetTrainer(n_envs=args.envs, gamma=args.gamma, eps=args.eps, promote=args.promote, episode_cap=args.cap,
+                        seed=args.seed, hidden=args.hidden, lr=args.lr, batch=args.batch, buffer=args.buffer,
+                        target_every=args.target_every, max_k=args.max_k, updates_per_step=args.updates_per_step,
+                        k_start=args.k_start, all_actions=args.all_actions, dyn_cap=args.dyn_cap,
+                        k_margin=args.k_margin, weight_by_depth=args.weight_by_depth)
+        print('network agent: %d-%d-%d-9 MLP, %d parallel environments, curriculum up to K=%d'
+              % (24 * 6, args.hidden, args.hidden, args.envs, args.max_k))
+    else:
+        tr = Trainer(n_envs=args.envs, alpha=args.alpha, gamma=args.gamma, eps=args.eps,
+                     promote=args.promote, episode_cap=args.cap, eval_every=args.eval_every, seed=args.seed)
+        print('transition table + BFS ready, %d states, %d parallel environments' % (rb.N_STATES, args.envs))
     if args.dashboard:
-        serve(args.dashboard, Serving(tr))
+        serve(args.dashboard, Serving(tr, args.agent))
     i = 0
-    while tr.steps < args.steps:
-        tr.step()
-        i += 1
-        if i % args.eval_every == 0:
-            rec = tr.evaluate()
-            print(fmt_row(rec))
-            write_metrics(tr.metrics)
-            if rec['K'] == MAX_DEPTH and rec['success_random'] >= args.target and rec['coverage'] >= args.target:
-                print('target reached')
-                break
+    try:
+        while tr.steps < args.steps and not (args.minutes and time.time() - tr.t0 > 60 * args.minutes):
+            tr.step()
+            i += 1
+            if i % args.eval_every == 0:
+                rec = tr.evaluate()
+                print(fmt_row(rec))
+                write_metrics(tr.metrics, pt['metrics'])
+                done = rec['success_random'] >= args.target and (args.agent == 'net' or rec['coverage'] >= args.target)
+                if rec['K'] == tr_max_k(tr) and done:
+                    print('target reached')
+                    break
+    except KeyboardInterrupt:
+        print('\ninterrupted, saving')
     rec = tr.evaluate()
     print(fmt_row(rec))
-    tr.save()
+    write_metrics(tr.metrics, pt['metrics'])
+    if args.agent == 'net':
+        print('computing the greedy action of every state (about 30 s)')
+        tr.save(NET_PATH, NET_POLICY_PATH)
+    else:
+        tr.save()
     print_table(rec)
-    print('saved', Q_PATH, POLICY_PATH, METRICS_PATH)
+    print('saved', pt['model'], pt['policy'], pt['metrics'])
     if args.dashboard:
         print('still serving; Ctrl-C to quit')
         wait_forever()
+
+
+def tr_max_k(tr):
+    return getattr(tr, 'max_k', MAX_DEPTH)
 
 
 def wait_forever():
@@ -347,9 +431,9 @@ def wait_forever():
 
 
 def serve_cmd(args):
-    sv = Serving()
-    if sv.Q is None and sv.policy is None:
-        print('note: no trained table in %s/ yet, the pages will use their built-in solvers' % CACHE)
+    sv = Serving(agent=args.agent)
+    if not sv.has_table():
+        print('note: no trained %s agent in %s/ yet, the pages will use their built-in solvers' % (args.agent, CACHE))
     serve(args.port, sv)
     wait_forever()
 
@@ -361,16 +445,17 @@ def print_table(rec):
         print('  %2d      %6.1f%%   %s' % (d, 100 * rec['success_by_depth'][d - 1], '%.2f (%d)' % (ml, d) if ml else '-'))
 
 
-def load_policy():
-    if os.path.exists(POLICY_PATH):
-        return np.load(POLICY_PATH, mmap_mode='r')
-    if os.path.exists(Q_PATH):
+def load_policy(agent):
+    pt = paths(agent)
+    if os.path.exists(pt['policy']):
+        return np.load(pt['policy'], mmap_mode='r')
+    if agent == 'table' and os.path.exists(Q_PATH):
         return np.argmax(np.load(Q_PATH, mmap_mode='r'), axis=1)
-    sys.exit('no trained table in %s/ - run: python play_rubik.py train' % CACHE)
+    sys.exit('no trained %s agent in %s/ - run: python play_rubik.py train --agent %s' % (agent, CACHE, agent))
 
 
 def solve(args):
-    policy = load_policy()
+    policy = load_policy(args.agent)
     a = rb.to_array(args.state)
     idx = rb.encode(a)
     moves = []
@@ -391,6 +476,8 @@ def solve(args):
 
 
 def evaluate(args):
+    if args.agent == 'net':
+        return evaluate_net(args)
     if not os.path.exists(Q_PATH):
         sys.exit('no trained table in %s/ - run: python play_rubik.py train' % CACHE)
     tr = Trainer.__new__(Trainer)
@@ -408,12 +495,38 @@ def evaluate(args):
     print_table(rec)
 
 
+def evaluate_net(args):
+    if not os.path.exists(NET_PATH):
+        sys.exit('no trained network in %s/ - run: python play_rubik.py train --agent net' % CACHE)
+    from qnet import MLP, onehot
+    T = np.ascontiguousarray(rb.transitions())
+    dist = rb.bfs_distances(T)
+    net = MLP.from_file(NET_PATH)
+    qf = lambda idx: net.forward(onehot(idx))
+    rng = np.random.default_rng(args.seed)
+    rec = {'success_by_depth': [], 'mean_len_by_depth': []}
+    weight = np.bincount(dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
+    total = weight[0]
+    for d in range(1, MAX_DEPTH + 1):
+        pool = np.nonzero(dist == d)[0]
+        pick = pool[rng.integers(pool.shape[0], size=min(2000, pool.shape[0]))]
+        length = greedy_rollout(qf, T, pick)
+        ok = length > 0
+        rec['success_by_depth'].append(float(ok.mean()))
+        rec['mean_len_by_depth'].append(float(length[ok].mean()) if ok.any() else None)
+        total += weight[d] * ok.mean()
+    sample = rng.integers(rb.N_STATES, size=20000)
+    err = float(np.abs(qf(sample).max(axis=1) + dist[sample]).mean())
+    print('success on a uniformly random state %.3f%%   mean |Q + distance| %.4f' % (100 * total, err))
+    print_table(rec)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
     t = sub.add_parser('train')
     t.add_argument('--steps', type=int, default=400_000_000, help='max environment steps')
-    t.add_argument('--envs', type=int, default=8192)
+    t.add_argument('--envs', type=int, default=None, help='parallel environments (default 8192 table / 1024 net)')
     t.add_argument('--alpha', type=float, default=1.0)
     t.add_argument('--gamma', type=float, default=1.0)
     t.add_argument('--eps', type=float, default=0.1)
@@ -423,12 +536,29 @@ def main():
     t.add_argument('--target', type=float, default=0.999, help='stop once random-state success and coverage both reach this')
     t.add_argument('--seed', type=int, default=0)
     t.add_argument('--dashboard', type=int, default=0, metavar='PORT', help='serve dashboard.html + /metrics on this port')
+    t.add_argument('--agent', choices=['table', 'net'], default='table', help='Q-table (default) or neural network')
+    t.add_argument('--hidden', type=int, default=256, help='net: hidden layer width')
+    t.add_argument('--lr', type=float, default=1e-3, help='net: Adam learning rate')
+    t.add_argument('--batch', type=int, default=256, help='net: replay minibatch size')
+    t.add_argument('--updates-per-step', type=int, default=4, help='net: gradient steps per environment step')
+    t.add_argument('--minutes', type=float, default=0, help='stop after this many minutes of training (0 = no limit)')
+    t.add_argument('--all-actions', action='store_true', help='net: DeepCube-style targets for all 9 actions of sampled states (uses the transition model)')
+    t.add_argument('--dyn-cap', action='store_true', help='net: episode cap = K + 3 so episodes do not wander far beyond the curriculum')
+    t.add_argument('--k-margin', type=int, default=0, help='net: sample training states up to K + margin moves deep')
+    t.add_argument('--weight-by-depth', action='store_true', help='net: weight the loss by 1/scramble depth (DeepCube)')
+    t.add_argument('--k-start', type=int, default=1, help='net: initial curriculum depth (= --max-k: no curriculum, all depths from the start)')
+    t.add_argument('--buffer', type=int, default=200000, help='net: replay buffer size')
+    t.add_argument('--target-every', type=int, default=1000, help='net: target network refresh (updates)')
+    t.add_argument('--max-k', type=int, default=MAX_DEPTH, help='net: cap the curriculum depth (train shallow, test deep)')
     e = sub.add_parser('eval')
     e.add_argument('--seed', type=int, default=0)
+    e.add_argument('--agent', choices=['table', 'net'], default='table')
     s = sub.add_parser('solve')
     s.add_argument('state', help='24 letters, e.g. %s' % rb.INIT)
-    v = sub.add_parser('serve', help='serve dashboard.html / playground.html plus the trained table, no training')
+    s.add_argument('--agent', choices=['table', 'net'], default='table')
+    v = sub.add_parser('serve', help='serve dashboard.html / playground.html plus the trained agent, no training')
     v.add_argument('--port', type=int, default=8000)
+    v.add_argument('--agent', choices=['table', 'net'], default='table')
     args = p.parse_args()
     {'train': train, 'eval': evaluate, 'solve': solve, 'serve': serve_cmd}[args.cmd](args)
 

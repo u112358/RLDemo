@@ -55,6 +55,77 @@ The current version:
   is the ordinary one-step Q-learning rule applied to a batch. About 2.5 M
   environment steps per second on one CPU core.
 
+## The same learner with a neural network
+
+```
+python play_rubik.py train --agent net --dashboard 8000     # ~10 min on one CPU
+python play_rubik.py train --agent net --max-k 7            # train shallow, test deep
+python play_rubik.py serve --agent net                      # pages + the network's policy
+python play_rubik.py eval --agent net
+```
+
+`qnet.py` keeps everything above (environment, curriculum, reward, ε-greedy
+batched Q-learning) and only replaces the table: Q(s, ·) is a
+144 → 256 → 256 → 9 MLP over the one-hot stickers, trained on a replay buffer
+with a target network (a small DQN, written in numpy so nothing beyond numpy
+is needed). The point of the comparison:
+
+- The table can only *cover* states: a state it never visited has no
+  information. The network has to *generalise*: every state, seen or not,
+  gets a value from the same weights.
+- So the dashboard gains a metric the table cannot have: **unseen success**,
+  the greedy solve rate on states that were never visited during training.
+  For the table this is 0 by construction (`--max-k 7` makes the contrast
+  stark: the table never sees distance 8-11 at all).
+- The price is exactness. The table converges to Q = −distance in the states
+  it has covered; the network's values are approximate everywhere, so its
+  solutions are longer and it needs many more gradient steps per state-visit
+  than the table needs lookups.
+
+### What happened
+
+Runs on one CPU core (numpy, 4 threads unless noted). "d≤4 / d=5 / d=6" is the
+greedy solve rate on states at exactly that distance; "random" is the solve
+rate on a uniformly random state; "unseen" the solve rate on states never
+visited during training.
+
+| variant | minutes | d≤4 | d=5 | d=6 | random | unseen |
+|---|---:|---:|---:|---:|---:|---:|
+| Q-learning, replay, curriculum (default) | 9 | 100 % | 84 % | 32 % | 3.6 % | 3.5 % |
+| + episode cap K+3 (`--dyn-cap`) | 6 | 100 % | 82 % | 38 % | 3.5 % | 2.5 % |
+| all-actions targets, curriculum (`--all-actions`) | 6 | 100 % | 81 % | 28 % | 1.2 % | 1.1 % |
+| all-actions, sample up to K+2 (`--k-margin 2`) | 6 | 100 % | 91 % | 38 % | 3.6 % | 2.0 % |
+| DeepCube-style: all depths, 1/k loss (`--k-start 11 --weight-by-depth`) | 6 | 100 % | 88 % | 42 % | 2.4 % | 1.5 % |
+| no curriculum, plain Q-learning (`--k-start 11`) | 6 | 75-100 % | 31 % | 7 % | 0.3 % | 0.3 % |
+NET_LONG_RUN_ROW
+
+Every variant reaches the same plateau: perfect up to four moves, then a
+fast fall-off. Two things were ruled out along the way (the code keeps the
+switches so you can reproduce them):
+
+- **Not the number of gradient steps.** Raising updates per environment
+  step 8× changed nothing.
+- **Not optimistic extrapolation.** The diagnostic in the session showed the
+  opposite: values of states just beyond the curriculum are *under*-estimated
+  (depth-5 states got about −8 for their correct action, true −5), because
+  the replay buffer is dominated by wandering transitions into deep states
+  whose targets sit at the −12 clamp, and the network smooths that mass over
+  the frontier.
+
+What remains is precision. For the greedy policy to be right, the network
+must separate Q-values that differ by exactly 1 across millions of states,
+i.e. keep its error below ±0.5 nearly everywhere. A 144-256-256-9 MLP trained
+for minutes on a CPU gets the *average* error down to about 1 move (the
+"value error" curve) but not the per-state error, and the curriculum cannot
+advance past K = 5 because the 97 % gate at depth 5 is never met. The table
+gets ±0 by construction. The published DeepCube results use networks two
+orders of magnitude larger, GPU-hours, and a search on top of the value
+function rather than a greedy walk; that is the actual cost of trading
+coverage for generalisation.
+
+The generalisation itself is real but small: 2-4 % of never-visited states
+are solved greedily, against 0 % for any table.
+
 ## Applying the policy to a real cube
 
 The policy only ever turns the top, right and front layers, so the

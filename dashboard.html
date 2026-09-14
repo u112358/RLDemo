@@ -152,7 +152,7 @@
   <div class="charts">
     <div class="card"><h2>随机状态一次解出率 <span>贪心策略，按状态分布加权</span></h2><div id="cSucc"></div></div>
     <div class="card"><h2>课程深度 K <span>训练起点 = 复原态打乱 1…K 步</span></h2><div id="cK"></div></div>
-    <div class="card"><h2>Q 表覆盖率 <span>至少更新过一次的状态比例</span></h2><div id="cCov"></div></div>
+    <div class="card"><h2 id="covTitle">Q 表覆盖率 <span>至少更新过一次的状态比例</span></h2><div id="cCov"></div></div>
     <div class="card"><h2>价值误差 <span>已访问状态上的 mean |Q + BFS 距离|</span></h2><div id="cErr"></div></div>
     <div class="card wide">
       <h2>按距离分解 <span>每个距离抽 400 个精确距离为 d 的状态，贪心走 30 步</span></h2>
@@ -266,7 +266,7 @@
     const recs = data.records || [];
     const cfg = data.config || {};
     const r = recs[recs.length - 1];
-    $('cfg').textContent = Object.keys(cfg).length ? `envs ${cfg.envs} · α ${cfg.alpha} · γ ${cfg.gamma} · ε ${cfg.eps} · cap ${cfg.cap} · promote ${cfg.promote}` : '';
+    $('cfg').textContent = Object.keys(cfg).length ? (cfg.agent === 'net' ? `神经网络 144-${cfg.hidden}-${cfg.hidden}-9 · lr ${cfg.lr} · batch ${cfg.batch} · max K ${cfg.max_k} · ` : 'Q 表 · ') + `envs ${cfg.envs} · γ ${cfg.gamma} · ε ${cfg.eps} · cap ${cfg.cap} · promote ${cfg.promote}` : '';
     if (!r) {
       $('tiles').innerHTML = `<div class="empty" style="grid-column:1/-1">还没有训练记录。启动训练并打开后台：<code>python play_rubik.py train --dashboard 8000</code>，然后访问 <code>http://localhost:8000/</code>。</div>`;
       return;
@@ -279,14 +279,21 @@
       tile('环境步数', `${fmtCompact(r.step)}<small>${fmtInt(r.step)}</small>`, { hero: true }) +
       tile('课程深度 K', `${r.K}<small>/ 11</small><span class="pips">${kp}</span>`) +
       tile('随机状态解出率', `${pct(r.success_random)}`, { html: `<div class="meter"><i style="width:${100 * r.success_random}%"></i></div>` }) +
-      tile('Q 表覆盖率', `${pct(r.coverage)}<small>of 3.67M</small>`, { html: `<div class="meter"><i style="width:${100 * r.coverage}%"></i></div>` }) +
+      tile(cfg.agent === 'net' ? '训练中访问过的状态' : 'Q 表覆盖率', `${pct(r.coverage)}<small>of 3.67M</small>`, { html: `<div class="meter"><i style="width:${100 * r.coverage}%"></i></div>` }) +
       tile('价值误差', r.q_error === null ? '–' : `${r.q_error.toFixed(3)}<small>moves</small>`) +
       tile('吞吐', `${fmtCompact(r.sps)}<small>env-steps / s</small>`) +
-      tile('已用时间', `${fmtTime(r.time)}<small>${fmtCompact(r.episodes)} episodes</small>`);
+      tile('已用时间', `${fmtTime(r.time)}<small>${fmtCompact(r.episodes)} episodes</small>`) +
+      (r.unseen_success !== undefined ? tile('未见过状态解出率', r.unseen_success === null ? '–' : `${pct(r.unseen_success)}<small>泛化</small>`, { html: `<div class="meter"><i style="width:${100 * (r.unseen_success || 0)}%"></i></div>` }) : '') +
+      (r.loss !== undefined ? tile('训练损失', r.loss === null ? '–' : `${r.loss.toFixed(3)}<small>MSE</small>`) : '');
     const P = key => recs.map(x => [x.step, x[key]]);
     lineChart($('cSucc'), [{ name: 'success', color: css('--s1'), points: P('success_random'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
     lineChart($('cK'), [{ name: 'K', color: css('--s2'), points: P('K') }], { yMin: 0, yMax: 11, yFmt: v => String(Math.round(v)), step: true, ticksY: 11 });
-    lineChart($('cCov'), [{ name: 'coverage', color: css('--s1'), points: P('coverage'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
+    if (cfg.agent === 'net') {
+      $('covTitle').innerHTML = '访问过的状态 与 未见过状态解出率 <span>蓝：训练中访问过的状态比例；橙：从未访问过的状态的贪心解出率</span>';
+      lineChart($('cCov'), [{ name: 'seen', color: css('--s1'), points: P('coverage'), area: true }, { name: 'unseen ok', color: css('--s2'), points: recs.map(x => [x.step, x.unseen_success === null ? 0 : x.unseen_success]) }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
+    } else {
+      lineChart($('cCov'), [{ name: 'coverage', color: css('--s1'), points: P('coverage'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
+    }
     const errs = recs.filter(x => x.q_error !== null).map(x => [x.step, x.q_error]);
     const eMax = Math.max(0.5, ...errs.map(p => p[1]));
     lineChart($('cErr'), [{ name: '|Q+d|', color: css('--s3'), points: errs }], { yMin: 0, yMax: Math.ceil(eMax * 2) / 2, yFmt: v => v.toFixed(1) });
