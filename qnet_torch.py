@@ -134,7 +134,10 @@ class TorchNetTrainer:
         return self._scramble_t(d).cpu().numpy()
 
     def _q(self, idx_t, model=None):
-        with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.amp):
+        # cache_enabled=False: autocast's cached bf16 weight copies are made without grad
+        # when the first forward of a region runs under no_grad (evaluation), and a
+        # training forward that reuses them fails in backward()
+        with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.amp, cache_enabled=False):
             return (model or self.net)(self.feats[idx_t].float()).float()
 
     def qvalues(self, idx):
@@ -185,9 +188,8 @@ class TorchNetTrainer:
         """Double-DQN targets for (B, k) children indices."""
         flat = children.reshape(-1)
         with torch.no_grad():
-            X = self.feats[flat].float()
-            a2 = self.net(X).argmax(1)
-            q2 = self.target(X).gather(1, a2[:, None]).squeeze(1)
+            a2 = self._q(flat).argmax(1)
+            q2 = self._q(flat, self.target).gather(1, a2[:, None]).squeeze(1)
         done = flat == rb.SOLVED_INDEX
         t = torch.where(done, torch.zeros_like(q2), q2) - 1.0
         return t.clamp(self.Q0, 0.0).reshape(children.shape)
@@ -209,7 +211,8 @@ class TorchNetTrainer:
             self.seen[s.cpu().numpy()] = True
         children = self.T_t[s]                              # (B, 9)
         target = self._targets(children, B)
-        q = self._q(s)
+        with torch.enable_grad():
+            q = self._q(s)
         w = (1.0 / depths.float()) if self.weight_by_depth else torch.ones(B, device=self.device)
         w = (w / w.mean())[:, None]
         self._finish((w * (q - target) ** 2).mean())
@@ -218,7 +221,8 @@ class TorchNetTrainer:
         i = torch.randint(self.buf_len, (self.batch,), device=self.device)
         s, a, s2, done = self.buf_s[i], self.buf_a[i], self.buf_s2[i], self.buf_done[i]
         target = self._targets(s2[:, None], self.batch)[:, 0]
-        q = self._q(s).gather(1, a[:, None]).squeeze(1)
+        with torch.enable_grad():
+            q = self._q(s).gather(1, a[:, None]).squeeze(1)
         self._finish(((q - target) ** 2).mean())
 
     def evaluate(self, n_per_depth=400, sample_states=20000):
