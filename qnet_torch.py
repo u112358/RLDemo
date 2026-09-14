@@ -207,8 +207,7 @@ class TorchNetTrainer:
         B = self.batch
         depths = torch.randint(1, self._depth_hi(self.k_margin), (B,), device=self.device)
         s = self._scramble_t(depths)
-        if self.updates % 20 == 0:
-            self.seen[s.cpu().numpy()] = True
+        self.seen[s.cpu().numpy()] = True          # every sampled training state counts as seen
         children = self.T_t[s]                              # (B, 9)
         target = self._targets(children, B)
         with torch.enable_grad():
