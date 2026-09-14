@@ -300,6 +300,27 @@ def decode(idx):
 SOLVED_INDEX = encode(SOLVED)
 
 
+class EpisodeRecorder:
+    """Keeps the last complete episode of one environment (for the dashboard's
+    replay): start state, every action, whether it was solved."""
+
+    def __init__(self):
+        self.states, self.actions, self.tags = [], [], []
+        self.last, self.count = None, 0
+
+    def push(self, step, s, a, s2, done, reset, k, K, explore=False, unknown=False):
+        if not self.states:
+            self.states = [int(s)]
+        self.states.append(int(s2))
+        self.actions.append(int(a))
+        self.tags.append('explore' if explore else 'unknown' if unknown else 'greedy')
+        if reset:
+            self.count += 1
+            self.last = {'id': self.count, 'step': int(step), 'k': int(k), 'K': int(K), 'solved': bool(done),
+                         'states': self.states, 'actions': self.actions, 'tags': self.tags}
+            self.states, self.actions, self.tags = [], [], []
+
+
 def transitions(cache_dir='cache'):
     """(N_STATES, 9) int32 table: next index for every state and action.
     Built once (about 20 s) and cached on disk."""

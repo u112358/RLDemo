@@ -134,8 +134,12 @@ class NetTrainer:
         self.k = np.zeros(n_envs, dtype=np.int64)
         self.s = self._new_starts(np.arange(n_envs))
         self.age = np.zeros(n_envs, dtype=np.int64)
-        self.trace = None
+        self.recorder = rb.EpisodeRecorder()
         self.policy_cache = None
+
+    @property
+    def trace(self):
+        return self.recorder.last
 
     # ---- interface shared with the tabular trainer ----
     def qvalues(self, idx):
@@ -169,9 +173,6 @@ class NetTrainer:
         self.buf_s[pos], self.buf_a[pos], self.buf_s2[pos], self.buf_done[pos] = s, a, s2, done
         self.buf_pos = (self.buf_pos + n) % self.buf_n
         self.buf_len = min(self.buf_len + n, self.buf_n)
-        self.trace = {'step': self.steps, 'state': int(s[0]), 'action': int(a[0]), 'next': int(s2[0]),
-                      'explore': bool(explore[0]), 'unknown': False, 'done': bool(done[0]),
-                      'k': int(self.k[0]), 'age': int(self.age[0]), 'K': self.K}
         # gradient steps on replay minibatches
         if self.buf_len >= self.batch:
             for _ in range(self.updates_per_step):
@@ -179,6 +180,7 @@ class NetTrainer:
         self.age += 1
         cap = min(self.cap, self.K + 3) if self.dyn_cap else self.cap
         reset = done | (self.age >= cap)
+        self.recorder.push(self.steps, s[0], a[0], s2[0], done[0], reset[0], self.k[0], self.K, explore[0])
         n_reset = int(reset.sum())
         if n_reset:
             s2 = s2.copy()

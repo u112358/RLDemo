@@ -92,7 +92,7 @@ class TorchNetTrainer:
         self.steps = self.updates = self.episodes = self.solved = 0
         self.losses = []
         self.metrics = []
-        self.trace = None
+        self.recorder = rb.EpisodeRecorder()
         self.policy_cache = None
         self.t0 = time.time()
         # replay buffer on the device (model-free mode) and a few environments
@@ -106,6 +106,10 @@ class TorchNetTrainer:
         self.k = np.zeros(n_envs, dtype=np.int64)
         self.age = np.zeros(n_envs, dtype=np.int64)
         self.s = self._new_starts(np.arange(n_envs))
+
+    @property
+    def trace(self):
+        return self.recorder.last
 
     # ---- helpers ----
     def _depth_hi(self, margin=0):
@@ -158,9 +162,6 @@ class TorchNetTrainer:
             self.buf_s[pos], self.buf_a[pos], self.buf_s2[pos], self.buf_done[pos] = s_t, a, s2, done
             self.buf_pos = (self.buf_pos + self.n) % self.buf_n
             self.buf_len = min(self.buf_len + self.n, self.buf_n)
-        a0, s20, ex0, d0 = int(a[0]), int(s2[0]), bool(explore[0]), bool(done[0])
-        self.trace = {'step': self.steps, 'state': int(self.s[0]), 'action': a0, 'next': s20, 'explore': ex0,
-                      'unknown': False, 'done': d0, 'k': int(self.k[0]), 'age': int(self.age[0]), 'K': self.K}
         self.seen[self.s] = True
         for _ in range(self.updates_per_step):
             if self.all_actions:
@@ -170,6 +171,7 @@ class TorchNetTrainer:
         done_np, s2_np = done.cpu().numpy(), s2.cpu().numpy()
         self.age += 1
         reset = done_np | (self.age >= self.cap)
+        self.recorder.push(self.steps, self.s[0], int(a[0]), s2_np[0], done_np[0], reset[0], self.k[0], self.K, bool(explore[0]))
         n_reset = int(reset.sum())
         if n_reset:
             s2_np[reset] = self._new_starts(np.nonzero(reset)[0])

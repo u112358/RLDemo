@@ -100,10 +100,20 @@
       for (const c of cubies) { c.position.set(Math.sign(c.position.x) * 0.5, Math.sign(c.position.y) * 0.5, Math.sign(c.position.z) * 0.5); c.rotation.set(0, 0, 0); }
       pivot.rotation.set(0, 0, 0);
     }
+    let token = 0;
+    function cancel() {
+      if (!view.busy) return;
+      token++;                                     // the running animation's frame callback exits
+      for (const st of stickers) root.attach(st.mesh);
+      for (const c of cubies) root.attach(c);
+      resetTransforms();
+      view.busy = false;
+    }
     const view = {
       available: true, busy: false,
       get state() { return state; },
-      setState(s) { state = s; paint(); },
+      setState(s) { cancel(); state = s; paint(); },
+      cancel,
       setPalette(p) { palette = Object.assign({}, p); paint(); },
       setView(t, p, d) { if (t !== undefined) theta = t; if (p !== undefined) phi = p; if (d !== undefined) dist = d; placeCamera(); },
       /** Rotate the layer of action `a` over `dur` ms, then show `next` and call `cb`. */
@@ -111,12 +121,15 @@
         const layer = LAYER[Math.floor(a / 3)], k = a % 3 + 1;
         const quarters = k === 3 ? -1 : k;
         const target = layer.sign * quarters * Math.PI / 2;
+        cancel();
         const parts = cubies.concat(stickers.map(s => s.mesh)).filter(m => layer.sel(m.position));
         parts.forEach(m => pivot.attach(m));
         const t0 = performance.now();
         const total = reduced ? 0 : dur * (k === 2 ? 1.35 : 1);
+        const my = ++token;
         view.busy = true;
         function step(now) {
+          if (my !== token) return;
           const t = total ? Math.min(1, (now - t0) / total) : 1;
           pivot.rotation[layer.axis] = target * easeInOutCubic(t);
           if (t < 1) { requestAnimationFrame(step); return; }

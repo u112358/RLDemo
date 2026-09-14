@@ -97,6 +97,8 @@
   .tag.unknown { color: var(--s2); border-color: var(--s2); }
   .tag.greedy { color: var(--s1); border-color: var(--s1); }
   .tag.done { color: var(--good); border-color: var(--good); }
+  .speed { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .speed input { width: 110px; accent-color: var(--ink); }
   .qbars { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; align-items: end; height: 84px; }
   .qbar { display: grid; grid-template-rows: 1fr auto; height: 100%; text-align: center; font: 10px var(--mono); color: var(--muted); }
   .qbar .col { align-self: end; background: var(--grid); border-radius: 3px 3px 0 0; position: relative; }
@@ -142,6 +144,7 @@
           <select id="specDepth" title="旁观者的打乱步数"><option value="K">打乱 = 当前课程深度 K</option><option value="3">打乱 3 步</option><option value="6">打乱 6 步</option><option value="9">打乱 9 步</option><option value="11">打乱 11 步</option><option value="20">打乱 20 步</option></select>
           <button type="button" class="btn" id="specReset">重新打乱</button>
           <button type="button" class="btn" id="specPause">暂停</button>
+          <label class="speed"><span>速度</span><input type="range" id="cubeSpeed" min="1" max="12" step="1" value="3"><span id="cubeSpeedText">3 步/秒</span></label>
         </div>
         <div class="kv" id="cubeKv"></div>
         <div id="qbars" class="qbars"></div>
@@ -314,8 +317,18 @@
   const view = window.CubeView.create(cubeCanvas, { palette: M.ENV_COLORS, state: M.SOLVED, dist: 6.8 });
   let mode = 'spec', paused = false, live = false, policy = null;
   let spec = { state: M.SOLVED, steps: 0, k: 0, status: 'idle', timer: null };
-  let lastTraceStep = -1;
-  const MOVE_MS = 420, HOLD_MS = 260;
+  let ep = null, epPos = 0, lastEpId = -1;
+  let MOVE_MS = 420, HOLD_MS = 260;
+  function setSpeed(v) {
+    v = Number(v);
+    const total = v >= 12 ? 0 : 1000 / v;      // 12 = no animation, as fast as the page can draw
+    MOVE_MS = Math.round(total * 0.7); HOLD_MS = Math.round(total * 0.3);
+    $('cubeSpeedText').textContent = v >= 12 ? '极速' : v + ' 步/秒';
+    try { localStorage.setItem('cubeSpeed', String(v)); } catch (e) {}
+  }
+  try { const v = localStorage.getItem('cubeSpeed'); if (v) $('cubeSpeed').value = v; } catch (e) {}
+  setSpeed($('cubeSpeed').value);
+  $('cubeSpeed').addEventListener('input', () => setSpeed($('cubeSpeed').value));
 
   function kv(rows) { $('cubeKv').innerHTML = rows.map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join(''); }
   function qbars(q, pick) {
@@ -358,18 +371,33 @@
     spec.steps++; renderSpec(res);
     view.animate(res.action, MOVE_MS, next, () => { spec.state = next; spec.timer = setTimeout(specTick, HOLD_MS); });
   }
+  function renderEp(tag) {
+    const n = ep.actions.length, done = epPos >= n;
+    const result = ep.solved ? '<span class="tag done">解出</span>' : done ? '<span class="tag">没解出，到步数上限重置</span>' : '';
+    const tagHtml = tag === 'explore' ? '<span class="tag explore">ε 随机</span>' : tag === 'unknown' ? '<span class="tag unknown">未知动作优先</span>' : tag ? '<span class="tag greedy">贪心</span>' : '';
+    const st = ep.states[Math.min(epPos, n)];
+    kv([['回合', `#${ep.id}，训练步 ${ep.step.toLocaleString('en-US')}，课程 K=${ep.K}`],
+        ['起点', `复原态随机打乱 ${ep.k} 步`],
+        ['进度', `第 ${Math.min(epPos, n)} / ${n} 步 ${result}`],
+        ['状态', `<span class="mono">${st}</span>`], ['同色面', `${M.check(st)} / 6`],
+        ['动作', epPos > 0 && epPos <= n ? `${M.NOTATION[ep.actions[epPos - 1]]}（${M.ACTIONS[ep.actions[epPos - 1]]}）${tagHtml}` : '–']]);
+    qbars(null);
+    $('cubeNote').textContent = '训练器同时驱动几千个环境，这里完整回放 0 号环境最近结束的一个回合：从打乱态开始，逐步显示它在训练中实际走的每一步（标签说明这一步来自贪心、ε 随机还是未知动作优先）。回合结束后自动取下一个。';
+  }
   async function traceTick() {
     if (mode !== 'trace' || paused) return;
+    if (ep && epPos < ep.actions.length) {
+      const a = ep.actions[epPos], tag = ep.tags[epPos];
+      epPos++;
+      view.animate(a, MOVE_MS, ep.states[epPos], () => { renderEp(tag); setTimeout(traceTick, HOLD_MS); });
+      return;
+    }
     try {
       const res = await fetch('trace', { cache: 'no-store' }); const t = await res.json();
-      if (t.state && t.step !== lastTraceStep) {
-        lastTraceStep = t.step;
-        view.setState(t.state);
-        const tags = (t.explore ? '<span class="tag explore">ε 随机</span>' : t.unknown ? '<span class="tag unknown">未知动作优先</span>' : '<span class="tag greedy">贪心</span>') + (t.done ? '<span class="tag done">解出</span>' : '');
-        kv([['训练步', t.step.toLocaleString('en-US')], ['回合', `打乱 ${t.k} 步起，第 ${t.age} 步`], ['状态', `<span class="mono">${t.state}</span>`], ['同色面', `${M.check(t.state)} / 6`], ['动作', `${M.NOTATION[t.action]}（${M.ACTIONS[t.action]}）${tags}`]]);
-        qbars(null);
-        $('cubeNote').textContent = '训练器同时驱动 8192 个环境，这里抽样显示 0 号环境最近一次转移：每 0.7 秒取一次，所以看到的是训练动作的抽样而非连续轨迹。';
-        view.animate(t.action, MOVE_MS, t.next, () => { setTimeout(traceTick, 200); });
+      if (t.states && t.id !== lastEpId) {
+        ep = t; lastEpId = t.id; epPos = 0;
+        view.setState(ep.states[0]); renderEp(null);
+        setTimeout(traceTick, Math.max(HOLD_MS, 400));
         return;
       }
     } catch (e) { /* server gone */ }
@@ -379,7 +407,7 @@
     mode = m; $('modeTrace').classList.toggle('on', m === 'trace'); $('modeSpec').classList.toggle('on', m === 'spec');
     $('specDepth').disabled = $('specReset').disabled = m !== 'spec';
     clearTimeout(spec.timer);
-    if (m === 'spec') specReset(); else { lastTraceStep = -1; traceTick(); }
+    if (m === 'spec') specReset(); else { ep = null; lastEpId = -1; traceTick(); }
   }
   if (new URLSearchParams(location.search).get('mode') === 'trace') mode = 'trace';
   $('modeTrace').addEventListener('click', () => setMode('trace'));
@@ -409,7 +437,7 @@
       const data = await res.json();
       const wasLive = live;
       // live only when a trainer answers /trace (serve-only mode has metrics but no trainer)
-      try { const t = await (await fetch('trace', { cache: 'no-store' })).json(); live = !!t.state; } catch (e2) { live = false; }
+      try { const t = await (await fetch('trace', { cache: 'no-store' })).json(); live = !!(t.states || t.state); } catch (e2) { live = false; }
       source = 'live'; failures = 0; last = data; render(data);
       if (live !== wasLive || spec.status === 'idle') { cubeSourceChanged(); if (spec.status === 'idle' && (live || policy)) specReset(); }
     } catch (e) {

@@ -117,8 +117,12 @@ class Trainer:
         self.k = np.zeros(n_envs, dtype=np.int64)        # scramble depth of each env's episode
         self.s = self._new_starts(np.arange(n_envs))
         self.age = np.zeros(n_envs, dtype=np.int64)
-        self.trace = None                                # last transition of env 0, for the dashboard
+        self.recorder = rb.EpisodeRecorder()            # env 0's episodes, for the dashboard replay
         self.policy_cache = None
+
+    @property
+    def trace(self):
+        return self.recorder.last
 
     def qvalues(self, idx):
         return self.Q[idx]
@@ -153,10 +157,9 @@ class Trainer:
         # learned then counts as "unknown" again instead of sinking for good.
         Q[s, a] = np.maximum(Q[s, a] + self.alpha * (target - Q[s, a]), self.Q0)
         self.age += 1
-        self.trace = {'step': self.steps, 'state': int(s[0]), 'action': int(a[0]), 'next': int(s2[0]),
-                      'explore': bool(explore[0]), 'unknown': bool(q[0, a[0]] == self.Q0),
-                      'done': bool(done[0]), 'k': int(self.k[0]), 'age': int(self.age[0]), 'K': self.K}
         reset = done | (self.age >= self.cap)
+        self.recorder.push(self.steps, s[0], a[0], s2[0], done[0], reset[0], self.k[0], self.K,
+                           explore[0], q[0, a[0]] == self.Q0)
         n_reset = int(reset.sum())
         if n_reset:
             s2 = s2.copy()
@@ -301,12 +304,12 @@ class Serving:
         return self._packed
 
     def trace(self):
+        """The last complete episode of environment #0, states as 24-letter strings."""
         t = self.trainer.trace if self.trainer is not None else None
         if not t:
             return {}
         out = dict(t)
-        out['state'] = rb.to_str(rb.decode(t['state'])[0])
-        out['next'] = rb.to_str(rb.decode(t['next'])[0])
+        out['states'] = [rb.to_str(x) for x in rb.decode(np.array(t['states']))]
         return out
 
 
@@ -352,6 +355,73 @@ def serve(port, serving):
     print('dashboard:   http://localhost:%d/' % port)
     print('playground:  http://localhost:%d/playground.html' % port)
     return server
+
+
+def enable_ansi():
+    if os.name == 'nt':
+        os.system('')                     # turns on VT escape processing in the Windows console
+    return sys.stdout.isatty()
+
+
+def fmt_time(sec):
+    sec = max(0, int(sec))
+    return '%d:%02d:%02d' % (sec // 3600, sec % 3600 // 60, sec % 60) if sec >= 3600 else '%d:%02d' % (sec // 60, sec % 60)
+
+
+class Progress:
+    """One coloured status line, redrawn at every evaluation (TTY only)."""
+    C = {'dim': '\033[2m', 'cyan': '\033[36m', 'green': '\033[32m', 'yellow': '\033[33m', 'red': '\033[31m',
+         'bold': '\033[1m', 'off': '\033[0m'}
+
+    def __init__(self, args, tr, plain):
+        self.args, self.tr, self.plain, self.t0 = args, tr, plain, time.time()
+        self.max_k = tr_max_k(tr)
+
+    def col(self, name, text):
+        return text if self.plain else self.C[name] + text + self.C['off']
+
+    def line(self, rec):
+        a = self.args
+        elapsed = time.time() - self.t0
+        if a.minutes:
+            frac, eta = min(1.0, elapsed / (60 * a.minutes)), 60 * a.minutes - elapsed
+        else:
+            frac = min(1.0, rec['step'] / a.steps)
+            eta = (a.steps - rec['step']) / max(rec['sps'], 1)
+        # progress towards the target counts too: show whichever is further along
+        goal = min(1.0, rec['success_random'] / a.target) * (rec['K'] / self.max_k)
+        frac = max(frac, goal)
+        width = 22
+        bar = '█' * int(frac * width) + '░' * (width - int(frac * width))
+        succ = rec['success_random']
+        scol = 'green' if succ >= 0.95 else 'yellow' if succ >= 0.5 else 'red'
+        pips = '▮' * rec['K'] + '▯' * (self.max_k - rec['K'])
+        parts = [
+            self.col('cyan', bar) + ' %3d%%' % (100 * frac),
+            '已用 %s 剩余 %s' % (fmt_time(elapsed), fmt_time(eta) if frac < 1 else '0:00'),
+            'K ' + self.col('green', pips) + ' %d/%d' % (rec['K'], self.max_k),
+            '解出 ' + self.col(scol, '%6.2f%%' % (100 * succ)),
+            '覆盖 %5.1f%%' % (100 * rec['coverage']),
+            '|Q+d| %s' % ('%.2f' % rec['q_error'] if rec['q_error'] is not None else 'n/a'),
+        ]
+        if rec.get('loss') is not None:
+            parts.append('loss %.3f' % rec['loss'])
+        if rec.get('unseen_success') is not None:
+            parts.append('未见 %.1f%%' % (100 * rec['unseen_success']))
+        parts.append(self.col('dim', '%.1f upd/s' % (rec['updates'] / max(rec['time'], 1e-9)) if rec.get('updates')
+                              else '%s steps/s' % format(rec['sps'], ',')))
+        return '  '.join(parts)
+
+    def show(self, rec, final=False):
+        text = self.line(rec)
+        if self.plain:
+            print(fmt_row(rec))
+            return
+        try:
+            sys.stdout.write('\r\033[2K' + text + ('\n' if final else ''))
+        except UnicodeEncodeError:
+            sys.stdout.write('\r' + fmt_row(rec))
+        sys.stdout.flush()
 
 
 def fmt_row(rec):
@@ -411,6 +481,7 @@ def train(args):
         print('transition table + BFS ready, %d states, %d parallel environments' % (rb.N_STATES, args.envs))
     if args.dashboard:
         serve(args.dashboard, Serving(tr, args.agent))
+    progress = Progress(args, tr, plain=args.plain or not enable_ansi())
     i = 0
     try:
         while tr.steps < args.steps and not (args.minutes and time.time() - tr.t0 > 60 * args.minutes):
@@ -418,16 +489,16 @@ def train(args):
             i += 1
             if i % args.eval_every == 0:
                 rec = tr.evaluate()
-                print(fmt_row(rec))
+                progress.show(rec)
                 write_metrics(tr.metrics, pt['metrics'])
                 done = rec['success_random'] >= args.target and (args.agent == 'net' or rec['coverage'] >= args.target)
                 if rec['K'] == tr_max_k(tr) and done:
-                    print('target reached')
+                    print('\ntarget reached')
                     break
     except KeyboardInterrupt:
         print('\ninterrupted, saving')
     rec = tr.evaluate()
-    print(fmt_row(rec))
+    progress.show(rec, final=True)
     write_metrics(tr.metrics, pt['metrics'])
     if args.agent == 'net':
         print('computing the greedy action of every state (about 30 s)')
@@ -572,6 +643,7 @@ def main():
     t.add_argument('--device', default='auto', help='torch: auto | mps | cuda | cpu')
     t.add_argument('--layers', default='1024,1024,512', help='torch: hidden layer widths')
     t.add_argument('--replay', action='store_true', help='torch: model-free replay Q-learning instead of all-actions targets')
+    t.add_argument('--plain', action='store_true', help='plain one-line-per-evaluation log instead of the progress bar')
     t.add_argument('--amp', action='store_true', help='torch: bf16 autocast for the forward passes (CUDA), ~2x faster')
     t.add_argument('--weight-by-depth', action='store_true', help='net: weight the loss by 1/scramble depth (DeepCube)')
     t.add_argument('--k-start', type=int, default=1, help='net: initial curriculum depth (= --max-k: no curriculum, all depths from the start)')
