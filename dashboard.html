@@ -281,7 +281,7 @@
       tile('随机状态解出率', `${pct(r.success_random)}`, { html: `<div class="meter"><i style="width:${100 * r.success_random}%"></i></div>` }) +
       tile(cfg.agent === 'net' ? '训练中访问过的状态' : 'Q 表覆盖率', `${pct(r.coverage)}<small>of 3.67M</small>`, { html: `<div class="meter"><i style="width:${100 * r.coverage}%"></i></div>` }) +
       tile('价值误差', r.q_error === null ? '–' : `${r.q_error.toFixed(3)}<small>moves</small>`) +
-      tile('吞吐', `${fmtCompact(r.sps)}<small>env-steps / s</small>`) +
+      (r.updates !== undefined ? tile('吞吐', `${(r.updates / Math.max(r.time, 1e-9)).toFixed(0)}<small>updates / s · ${fmtCompact(r.updates)} 次</small>`) : tile('吞吐', `${fmtCompact(r.sps)}<small>env-steps / s</small>`)) +
       tile('已用时间', `${fmtTime(r.time)}<small>${fmtCompact(r.episodes)} episodes</small>`) +
       (r.unseen_success !== undefined ? tile('未见过状态解出率', r.unseen_success === null ? '–' : `${pct(r.unseen_success)}<small>泛化</small>`, { html: `<div class="meter"><i style="width:${100 * (r.unseen_success || 0)}%"></i></div>` }) : '') +
       (r.loss !== undefined ? tile('训练损失', r.loss === null ? '–' : `${r.loss.toFixed(3)}<small>MSE</small>`) : '');

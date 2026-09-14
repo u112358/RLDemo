@@ -24,6 +24,7 @@ loaded (the "策略解法" button and the real-cube section need it).
 | `play_rubik.py` | The learner (`train`, `eval`, `solve`). Writes `cache/q_table.npy`, `cache/policy.npy`, `cache/metrics.json`. |
 | `playground.html` | 3D visualiser of the environment (three.js from cdnjs): same sticker indices, action ids and reward as `rubik.py`; animated moves, sequence playback, scramble, undo, an optimal solver, the trained policy, and a **real-cube mode**: paint the 24 stickers of a physical cube, the page relabels the colours, looks the state up in the policy and walks you through the moves in your cube's colours. |
 | `dashboard.html` | Training monitor: curves for success rate, curriculum depth, coverage and value error, a per-distance breakdown, and a 3D cube that either replays environment #0's live training moves or, as a "spectator", scrambles a cube and solves it with the current Q-table so you can watch the policy improve. |
+| `qnet.py`, `qnet_torch.py` | The network agents: numpy MLP (CPU) and PyTorch (Apple MPS / CUDA), same interface as the table trainer. |
 | `cube-model.js`, `cube-3d.js` | Shared browser code: the cube model (moves, `encode`, legality, policy lookup, BFS solver, real-cube relabelling) and the three.js view. |
 
 ## How the learner works
@@ -81,6 +82,24 @@ is needed). The point of the comparison:
   it has covered; the network's values are approximate everywhere, so its
   solutions are longer and it needs many more gradient steps per state-visit
   than the table needs lookups.
+
+### On a GPU (Apple Silicon or CUDA)
+
+```
+pip install torch                                              # Apple Silicon: the default wheel has MPS support
+python play_rubik.py train --agent net --backend torch --dashboard 8000 --minutes 20
+python play_rubik.py serve --agent net                         # afterwards, pages + the network's policy (no torch needed)
+```
+
+`qnet_torch.py` is the same learner on PyTorch: the one-hot features of all
+3,674,160 states (529 MB) and the transition table live on the device, the
+default network is 144-1024-1024-512-9, and each batch of 8,192 sampled
+states contributes targets for all nine actions (`--replay` switches to
+model-free replay Q-learning). `--device auto` picks MPS on a Mac, CUDA if
+present, otherwise CPU; `--layers 2048,2048,1024` widens the net. The
+weights are exported in the numpy `MLP` format, so `serve`, `eval` and
+`solve` work on the result without torch. Metrics and the dashboard are
+identical to the numpy version, plus a `device` field.
 
 ### What happened
 

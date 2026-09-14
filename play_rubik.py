@@ -28,6 +28,7 @@ Usage::
 
     python play_rubik.py train [--dashboard 8000]     # train the Q-table, optional live page
     python play_rubik.py train --agent net [...]       # same learner with a neural network (see qnet.py)
+    python play_rubik.py train --agent net --backend torch   # the network on a GPU (Apple MPS / CUDA), see qnet_torch.py
     python play_rubik.py serve [--port 8000]           # pages + trained table, no training
     python play_rubik.py eval                          # success / length per depth
     python play_rubik.py solve wggbrymrgrwrbmbwybywmygm
@@ -365,15 +366,34 @@ def fmt_row(rec):
 
 def train(args):
     global CONFIG
+    torch_backend = args.agent == 'net' and args.backend == 'torch'
     if args.envs is None:
-        args.envs = 256 if args.agent == 'net' else 8192
+        args.envs = 64 if torch_backend else 256 if args.agent == 'net' else 8192
+    if args.batch is None:
+        args.batch = 8192 if torch_backend else 256
+    if args.k_margin is None:
+        args.k_margin = 2 if torch_backend else 0
+    if args.target_every is None:
+        args.target_every = 200 if torch_backend else 1000
+    if args.updates_per_step is None:
+        args.updates_per_step = 1 if torch_backend else 4
     if args.agent == 'net' and args.steps == 400_000_000:
         args.steps = 40_000_000
     if args.agent == 'net' and args.eval_every == 50:
-        args.eval_every = 200      # an evaluation costs ~0.7 s with the network
+        args.eval_every = 50 if torch_backend else 200      # an evaluation costs ~0.7 s with the numpy network
     CONFIG = {k: v for k, v in vars(args).items() if k != 'cmd'}
     pt = paths(args.agent)
-    if args.agent == 'net':
+    if args.agent == 'net' and args.backend == 'torch':
+        from qnet_torch import TorchNetTrainer
+        tr = TorchNetTrainer(layers=tuple(int(x) for x in args.layers.split(',')), lr=args.lr, batch=args.batch,
+                             device=args.device, all_actions=not args.replay, k_margin=args.k_margin,
+                             weight_by_depth=args.weight_by_depth, promote=args.promote, max_k=args.max_k,
+                             k_start=args.k_start, target_every=args.target_every, n_envs=args.envs, eps=args.eps,
+                             episode_cap=args.cap, buffer=args.buffer, updates_per_step=args.updates_per_step, seed=args.seed)
+        print('torch network agent on %s: %s MLP, batch %d, %s targets, curriculum margin %d'
+              % (tr.device, '-'.join(map(str, [24 * 6] + tr.layers + [9])), args.batch,
+                 'replay Q-learning' if args.replay else 'all-actions', args.k_margin))
+    elif args.agent == 'net':
         from qnet import NetTrainer
         tr = NetTrainer(n_envs=args.envs, gamma=args.gamma, eps=args.eps, promote=args.promote, episode_cap=args.cap,
                         seed=args.seed, hidden=args.hidden, lr=args.lr, batch=args.batch, buffer=args.buffer,
@@ -539,16 +559,20 @@ def main():
     t.add_argument('--agent', choices=['table', 'net'], default='table', help='Q-table (default) or neural network')
     t.add_argument('--hidden', type=int, default=256, help='net: hidden layer width')
     t.add_argument('--lr', type=float, default=1e-3, help='net: Adam learning rate')
-    t.add_argument('--batch', type=int, default=256, help='net: replay minibatch size')
-    t.add_argument('--updates-per-step', type=int, default=4, help='net: gradient steps per environment step')
+    t.add_argument('--batch', type=int, default=None, help='net: minibatch size (default 256 numpy / 8192 torch)')
+    t.add_argument('--updates-per-step', type=int, default=None, help='net: gradient steps per environment step (default 4 numpy / 1 torch)')
     t.add_argument('--minutes', type=float, default=0, help='stop after this many minutes of training (0 = no limit)')
     t.add_argument('--all-actions', action='store_true', help='net: DeepCube-style targets for all 9 actions of sampled states (uses the transition model)')
     t.add_argument('--dyn-cap', action='store_true', help='net: episode cap = K + 3 so episodes do not wander far beyond the curriculum')
-    t.add_argument('--k-margin', type=int, default=0, help='net: sample training states up to K + margin moves deep')
+    t.add_argument('--k-margin', type=int, default=None, help='net: sample training states up to K + margin moves deep (default 0 numpy / 2 torch)')
+    t.add_argument('--backend', choices=['numpy', 'torch'], default='numpy', help='net: numpy (CPU) or torch (Apple MPS / CUDA / CPU)')
+    t.add_argument('--device', default='auto', help='torch: auto | mps | cuda | cpu')
+    t.add_argument('--layers', default='1024,1024,512', help='torch: hidden layer widths')
+    t.add_argument('--replay', action='store_true', help='torch: model-free replay Q-learning instead of all-actions targets')
     t.add_argument('--weight-by-depth', action='store_true', help='net: weight the loss by 1/scramble depth (DeepCube)')
     t.add_argument('--k-start', type=int, default=1, help='net: initial curriculum depth (= --max-k: no curriculum, all depths from the start)')
     t.add_argument('--buffer', type=int, default=200000, help='net: replay buffer size')
-    t.add_argument('--target-every', type=int, default=1000, help='net: target network refresh (updates)')
+    t.add_argument('--target-every', type=int, default=None, help='net: target network refresh in updates (default 1000 numpy / 200 torch)')
     t.add_argument('--max-k', type=int, default=MAX_DEPTH, help='net: cap the curriculum depth (train shallow, test deep)')
     e = sub.add_parser('eval')
     e.add_argument('--seed', type=int, default=0)
