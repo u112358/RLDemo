@@ -27,6 +27,7 @@ What changed compared with the original demo and why:
 Usage::
 
     python play_rubik.py train [--dashboard 8000]     # train, optional live page
+    python play_rubik.py serve [--port 8000]           # pages + trained table, no training
     python play_rubik.py eval                          # success / length per depth
     python play_rubik.py solve wggbrymrgrwrbmbwybywmygm
 """
@@ -99,15 +100,19 @@ class Trainer:
         self.solved = 0
         self.t0 = time.time()
         self.metrics = []
-        self.s = self._new_starts(n_envs)
+        self.k = np.zeros(n_envs, dtype=np.int64)        # scramble depth of each env's episode
+        self.s = self._new_starts(np.arange(n_envs))
         self.age = np.zeros(n_envs, dtype=np.int64)
+        self.trace = None                                # last transition of env 0, for the dashboard
 
-    def _new_starts(self, n):
+    def _new_starts(self, which):
         # k random moves from solved, k in 1..K.  Once the curriculum is
         # complete, longer walks (up to 3x the diameter) approximate uniformly
         # random states, which are mostly 8-10 moves deep.
         hi = self.K + 1 if self.K < MAX_DEPTH else 3 * MAX_DEPTH
-        return scramble(self.T, self.rng, self.rng.integers(1, hi, size=n))
+        depths = self.rng.integers(1, hi, size=which.shape[0])
+        self.k[which] = depths
+        return scramble(self.T, self.rng, depths)
 
     def step(self):
         Q, T, s, rng = self.Q, self.T, self.s, self.rng
@@ -127,11 +132,14 @@ class Trainer:
         # learned then counts as "unknown" again instead of sinking for good.
         Q[s, a] = np.maximum(Q[s, a] + self.alpha * (target - Q[s, a]), self.Q0)
         self.age += 1
+        self.trace = {'step': self.steps, 'state': int(s[0]), 'action': int(a[0]), 'next': int(s2[0]),
+                      'explore': bool(explore[0]), 'unknown': bool(q[0, a[0]] == self.Q0),
+                      'done': bool(done[0]), 'k': int(self.k[0]), 'age': int(self.age[0]), 'K': self.K}
         reset = done | (self.age >= self.cap)
         n_reset = int(reset.sum())
         if n_reset:
             s2 = s2.copy()
-            s2[reset] = self._new_starts(n_reset)
+            s2[reset] = self._new_starts(np.nonzero(reset)[0])
             self.age[reset] = 0
             self.episodes += n_reset
             self.solved += int(done.sum())
@@ -187,32 +195,110 @@ def write_metrics(metrics):
 CONFIG = {}
 
 
-def serve_dashboard(port, trainer):
-    """Tiny HTTP server: ``/`` is dashboard.html, ``/metrics`` the live JSON."""
+def pack_policy(policy):
+    """uint8 actions (0..8) -> two per byte, low nibble first."""
+    p = np.asarray(policy, dtype=np.uint8)
+    if p.shape[0] % 2:
+        p = np.concatenate([p, np.zeros(1, np.uint8)])
+    return (p[0::2] | (p[1::2] << 4)).tobytes()
+
+
+class Serving:
+    """Data behind the HTTP endpoints: live trainer, or the saved cache."""
+
+    def __init__(self, trainer=None):
+        self.trainer = trainer
+        self.Q = self.policy = None
+        self.records, self.config = [], {}
+        self._packed = None
+        if trainer is None:
+            if os.path.exists(METRICS_PATH):
+                with open(METRICS_PATH) as f:
+                    m = json.load(f)
+                self.records, self.config = m.get('records', []), m.get('config', {})
+            if os.path.exists(Q_PATH):
+                self.Q = np.load(Q_PATH, mmap_mode='r')
+            elif os.path.exists(POLICY_PATH):
+                self.policy = np.load(POLICY_PATH, mmap_mode='r')
+
+    def metrics(self):
+        if self.trainer is not None:
+            return {'config': CONFIG, 'records': self.trainer.metrics}
+        return {'config': self.config, 'records': self.records}
+
+    def act(self, state):
+        """Greedy action of the current table for a 24-letter state."""
+        idx = rb.encode(state)
+        Q = self.trainer.Q if self.trainer is not None else self.Q
+        if Q is not None:
+            row = np.asarray(Q[idx], dtype=np.float64)
+            best = np.nonzero(row == row.max())[0]
+            a = int(np.random.choice(best))
+            return {'index': int(idx), 'action': a, 'q': [round(float(v), 3) for v in row],
+                    'unknown': bool(row.max() <= -(MAX_DEPTH + 1))}
+        if self.policy is not None:
+            return {'index': int(idx), 'action': int(self.policy[idx]), 'q': None, 'unknown': False}
+        raise RuntimeError('no table')
+
+    def policy_bytes(self):
+        if self.trainer is not None:
+            return pack_policy(np.argmax(self.trainer.Q, axis=1))
+        if self._packed is None:
+            src = self.policy if self.policy is not None else np.argmax(self.Q, axis=1)
+            self._packed = pack_policy(src)
+        return self._packed
+
+    def trace(self):
+        t = self.trainer.trace if self.trainer is not None else None
+        if not t:
+            return {}
+        out = dict(t)
+        out['state'] = rb.to_str(rb.decode(t['state'])[0])
+        out['next'] = rb.to_str(rb.decode(t['next'])[0])
+        return out
+
+
+def serve(port, serving):
+    """``/`` is dashboard.html, other files are served from the repo directory;
+    ``/metrics``, ``/trace``, ``/spectator?state=...`` and ``/policy.bin`` are
+    the data endpoints used by dashboard.html and playground.html."""
+    from urllib.parse import urlparse, parse_qs
     here = os.path.dirname(os.path.abspath(__file__))
 
     class Handler(http.server.SimpleHTTPRequestHandler):
+        def _send(self, body, ctype):
+            self.send_response(200)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
-            if self.path.split('?')[0] == '/metrics':
-                body = json.dumps({'config': CONFIG, 'records': trainer.metrics}).encode()
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Cache-Control', 'no-store')
-                self.send_header('Content-Length', str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            if self.path in ('/', '/index.html'):
+            u = urlparse(self.path)
+            try:
+                if u.path == '/metrics':
+                    return self._send(json.dumps(serving.metrics()).encode(), 'application/json')
+                if u.path == '/trace':
+                    return self._send(json.dumps(serving.trace()).encode(), 'application/json')
+                if u.path == '/spectator':
+                    state = parse_qs(u.query).get('state', [''])[0]
+                    return self._send(json.dumps(serving.act(state)).encode(), 'application/json')
+                if u.path == '/policy.bin':
+                    return self._send(serving.policy_bytes(), 'application/octet-stream')
+            except Exception as e:  # bad state string, no table, ...
+                return self._send(json.dumps({'error': str(e)}).encode(), 'application/json')
+            if u.path in ('/', '/index.html'):
                 self.path = '/dashboard.html'
             return super().do_GET()
 
         def log_message(self, *args):
             pass
 
-    Handler.directory = here
     server = http.server.ThreadingHTTPServer(('0.0.0.0', port), lambda *a, **k: Handler(*a, directory=here, **k))
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print('dashboard: http://localhost:%d/' % port)
+    print('dashboard:   http://localhost:%d/' % port)
+    print('playground:  http://localhost:%d/playground.html' % port)
     return server
 
 
@@ -230,7 +316,7 @@ def train(args):
                  promote=args.promote, episode_cap=args.cap, eval_every=args.eval_every, seed=args.seed)
     print('transition table + BFS ready, %d states, %d parallel environments' % (rb.N_STATES, args.envs))
     if args.dashboard:
-        serve_dashboard(args.dashboard, tr)
+        serve(args.dashboard, Serving(tr))
     i = 0
     while tr.steps < args.steps:
         tr.step()
@@ -248,12 +334,24 @@ def train(args):
     print_table(rec)
     print('saved', Q_PATH, POLICY_PATH, METRICS_PATH)
     if args.dashboard:
-        print('dashboard still serving; Ctrl-C to quit')
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            pass
+        print('still serving; Ctrl-C to quit')
+        wait_forever()
+
+
+def wait_forever():
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+
+
+def serve_cmd(args):
+    sv = Serving()
+    if sv.Q is None and sv.policy is None:
+        print('note: no trained table in %s/ yet, the pages will use their built-in solvers' % CACHE)
+    serve(args.port, sv)
+    wait_forever()
 
 
 def print_table(rec):
@@ -329,8 +427,10 @@ def main():
     e.add_argument('--seed', type=int, default=0)
     s = sub.add_parser('solve')
     s.add_argument('state', help='24 letters, e.g. %s' % rb.INIT)
+    v = sub.add_parser('serve', help='serve dashboard.html / playground.html plus the trained table, no training')
+    v.add_argument('--port', type=int, default=8000)
     args = p.parse_args()
-    {'train': train, 'eval': evaluate, 'solve': solve}[args.cmd](args)
+    {'train': train, 'eval': evaluate, 'solve': solve, 'serve': serve_cmd}[args.cmd](args)
 
 
 if __name__ == '__main__':

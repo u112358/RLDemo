@@ -6,10 +6,15 @@ live training dashboard.
 
 ```
 pip install numpy
-python play_rubik.py train --dashboard 8000   # ~2 min, open http://localhost:8000/
+python play_rubik.py train --dashboard 8000   # ~2 min, open http://localhost:8000/ while it runs
+python play_rubik.py serve                    # afterwards: dashboard + playground + trained policy, no training
 python play_rubik.py eval                     # success rate / solution length per distance
 python play_rubik.py solve wggbrymrgrwrbmbwybywmygm
 ```
+
+With the server running, http://localhost:8000/ is the training monitor and
+http://localhost:8000/playground.html the playground with the trained policy
+loaded (the "策略解法" button and the real-cube section need it).
 
 ## Files
 
@@ -17,8 +22,9 @@ python play_rubik.py solve wggbrymrgrwrbmbwybywmygm
 |---|---|
 | `rubik.py` | The environment: 6 faces × 4 stickers, 9 actions (`t1 t2 t3 r1 r2 r3 f1 f2 f3` = top / right / front layer turned 90° / 180° / 270°). Also a perfect hash of the 3,674,160 legal states (`encode` / `decode`), a cached transition table and a BFS distance table used as ground truth. `python rubik.py` runs a self-check. |
 | `play_rubik.py` | The learner (`train`, `eval`, `solve`). Writes `cache/q_table.npy`, `cache/policy.npy`, `cache/metrics.json`. |
-| `playground.html` | 3D visualiser of the environment (three.js from cdnjs): same sticker indices, action ids and reward as `rubik.py`; animated moves, sequence playback, scramble, undo and an optimal solver. Open the file in a browser. |
-| `dashboard.html` | Training monitor. Served by `train --dashboard PORT`; polls `/metrics` every 2 s. |
+| `playground.html` | 3D visualiser of the environment (three.js from cdnjs): same sticker indices, action ids and reward as `rubik.py`; animated moves, sequence playback, scramble, undo, an optimal solver, the trained policy, and a **real-cube mode**: paint the 24 stickers of a physical cube, the page relabels the colours, looks the state up in the policy and walks you through the moves in your cube's colours. |
+| `dashboard.html` | Training monitor: curves for success rate, curriculum depth, coverage and value error, a per-distance breakdown, and a 3D cube that either replays environment #0's live training moves or, as a "spectator", scrambles a cube and solves it with the current Q-table so you can watch the policy improve. |
+| `cube-model.js`, `cube-3d.js` | Shared browser code: the cube model (moves, `encode`, legality, policy lookup, BFS solver, real-cube relabelling) and the three.js view. |
 
 ## How the learner works
 
@@ -48,6 +54,26 @@ The current version:
 - **Batched.** 8,192 environments step in lock-step as numpy arrays; the update
   is the ordinary one-step Q-learning rule applied to a batch. About 2.5 M
   environment steps per second on one CPU core.
+
+## Applying the policy to a real cube
+
+The policy only ever turns the top, right and front layers, so the
+back-left-bottom cubie of the physical cube never moves. Hold the cube in any
+orientation, enter its 24 sticker colours in the playground, and the page
+
+1. relabels colours so that the fixed cubie's back/left/bottom stickers become
+   the env's `b`/`w`/`m` and each colour's opposite maps to the env's opposite
+   (this also fixes the handedness, so the result is a legal env state whenever
+   the input is a real cube),
+2. checks the state is solvable (a corner twisted by hand fails the orientation
+   parity test),
+3. looks the state up in `policy.bin` (two 4-bit actions per byte, one per
+   state, 1.8 MB) and follows the greedy action until solved, and
+4. animates each move in the cube's own colours; U / R / F are the standard
+   clockwise turns, `'` is anticlockwise, `2` is a half turn.
+
+`python play_rubik.py solve <24 letters>` does the same lookup on the command
+line for env-coloured states.
 
 ## Results
 

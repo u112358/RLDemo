@@ -9,21 +9,10 @@
 <style>
   :root {
     color-scheme: light dark;
-    --ground: #EDEFF3;
-    --panel: #FFFFFF;
-    --panel-2: #F5F6F9;
-    --ink: #171A21;
-    --muted: #5F6778;
-    --line: #D5D9E2;
-    --line-strong: #B9BFCC;
-    --btn: #1E222B;
-    --btn-ink: #F4F5F8;
-    --btn-2: #E6E9EF;
-    --focus: #2E67D9;
-    --good: #1E8E4E;
-    --good-bg: #DDF3E5;
-    --warn: #B4531B;
-    --warn-bg: #FBE9DC;
+    --ground: #EDEFF3; --panel: #FFFFFF; --panel-2: #F5F6F9;
+    --ink: #171A21; --muted: #5F6778; --line: #D5D9E2; --line-strong: #B9BFCC;
+    --btn: #1E222B; --btn-ink: #F4F5F8; --btn-2: #E6E9EF; --focus: #2E67D9;
+    --good: #1E8E4E; --good-bg: #DDF3E5; --warn: #B4531B; --warn-bg: #FBE9DC;
     --stage: radial-gradient(120% 90% at 50% 40%, #FAFBFD 0%, #E4E7EE 100%);
     --display: "Bricolage Grotesque", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
     --body: "IBM Plex Sans", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -31,56 +20,24 @@
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --ground: #101216;
-      --panel: #181B21;
-      --panel-2: #1F232B;
-      --ink: #E9EBF0;
-      --muted: #9AA1B0;
-      --line: #2A2F3A;
-      --line-strong: #3B4250;
-      --btn: #E9EBF0;
-      --btn-ink: #14171D;
-      --btn-2: #262B35;
-      --focus: #6C9BFF;
-      --good: #4CC97E;
-      --good-bg: #17331F;
-      --warn: #F0A06A;
-      --warn-bg: #3A2416;
+      --ground: #101216; --panel: #181B21; --panel-2: #1F232B;
+      --ink: #E9EBF0; --muted: #9AA1B0; --line: #2A2F3A; --line-strong: #3B4250;
+      --btn: #E9EBF0; --btn-ink: #14171D; --btn-2: #262B35; --focus: #6C9BFF;
+      --good: #4CC97E; --good-bg: #17331F; --warn: #F0A06A; --warn-bg: #3A2416;
       --stage: radial-gradient(120% 90% at 50% 40%, #232833 0%, #121419 100%);
     }
   }
   :root[data-theme="dark"] {
-    --ground: #101216;
-    --panel: #181B21;
-    --panel-2: #1F232B;
-    --ink: #E9EBF0;
-    --muted: #9AA1B0;
-    --line: #2A2F3A;
-    --line-strong: #3B4250;
-    --btn: #E9EBF0;
-    --btn-ink: #14171D;
-    --btn-2: #262B35;
-    --focus: #6C9BFF;
-    --good: #4CC97E;
-    --good-bg: #17331F;
-    --warn: #F0A06A;
-    --warn-bg: #3A2416;
+    --ground: #101216; --panel: #181B21; --panel-2: #1F232B;
+    --ink: #E9EBF0; --muted: #9AA1B0; --line: #2A2F3A; --line-strong: #3B4250;
+    --btn: #E9EBF0; --btn-ink: #14171D; --btn-2: #262B35; --focus: #6C9BFF;
+    --good: #4CC97E; --good-bg: #17331F; --warn: #F0A06A; --warn-bg: #3A2416;
     --stage: radial-gradient(120% 90% at 50% 40%, #232833 0%, #121419 100%);
   }
-
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--ground);
-    color: var(--ink);
-    font-family: var(--body);
-    font-size: 14px;
-    line-height: 1.5;
-    padding-block: 20px 32px;
-    padding-inline: 20px;
-  }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; padding-block: 20px 32px; padding-inline: 20px; }
   .app { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
-
   header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
   h1 { font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
   .sub { color: var(--muted); margin: 4px 0 0; }
@@ -94,32 +51,32 @@
   .pip.on { background: var(--good); }
   .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--btn-2); color: var(--muted); }
   .pill.good { background: var(--good-bg); color: var(--good); }
+  .pill.real { background: var(--warn-bg); color: var(--warn); }
 
   main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 380px); gap: 16px; align-items: start; }
   @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
-
   .stage { position: relative; background: var(--stage); border: 1px solid var(--line); border-radius: 12px; aspect-ratio: 1 / 0.86; max-width: 100%; min-height: 320px; overflow: hidden; }
   .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   .stage canvas:active { cursor: grabbing; }
   .stage .hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
   .stage .nolib { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
   .stage .axes { position: absolute; right: 12px; top: 10px; font-family: var(--mono); font-size: 11px; color: var(--muted); pointer-events: none; text-align: right; line-height: 1.4; }
+  .stage .modetag { position: absolute; left: 12px; top: 10px; }
 
   .panel { display: grid; gap: 14px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
   h2 { font-family: var(--display); font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   h2 span { font-family: var(--body); font-weight: 400; font-size: 12px; color: var(--muted); }
-
   .moves { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: 6px; align-items: stretch; }
   .moves .rowlab { font-size: 12px; color: var(--muted); align-self: center; padding-right: 4px; white-space: nowrap; }
   .moves .rowlab b { display: block; color: var(--ink); font-weight: 600; }
-  .mv { border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 7px 6px 6px; cursor: pointer; display: grid; gap: 1px; text-align: center; font-family: var(--body); transition: transform 80ms ease, background 120ms ease; }
+  .mv { position: relative; border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 7px 6px 6px; cursor: pointer; display: grid; gap: 1px; text-align: center; font-family: var(--body); transition: transform 80ms ease, background 120ms ease; }
   .mv .n { font-family: var(--display); font-weight: 700; font-size: 18px; line-height: 1.1; }
   .mv .c { font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .mv:hover { background: var(--btn-2); }
   .mv:active { transform: scale(0.96); }
   .mv:disabled { opacity: 0.5; cursor: default; }
-
+  .mv.pol::after { content: '策略'; position: absolute; top: -7px; right: -4px; font-size: 10px; font-weight: 600; background: var(--good); color: #fff; border-radius: 999px; padding: 0 6px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .btn { border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 7px 12px; font: 500 13px var(--body); cursor: pointer; }
   .btn:hover { background: var(--btn-2); }
@@ -127,7 +84,6 @@
   .btn.primary:hover { filter: brightness(1.12); }
   .btn:disabled { opacity: 0.5; cursor: default; }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-
   label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
   input[type="text"] { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; font: 13px var(--mono); background: var(--panel-2); color: var(--ink); }
   input[type="range"] { width: 130px; accent-color: var(--ink); }
@@ -135,18 +91,32 @@
   .msg { font-size: 12px; color: var(--muted); min-height: 1.2em; }
   .msg.warn { color: var(--warn); }
   .msg.good { color: var(--good); }
-
   .history { display: flex; flex-wrap: wrap; gap: 4px; min-height: 26px; }
   .history .tok { font: 12px var(--mono); padding: 2px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
   .history .tok.last { border-color: var(--ink); }
   .history .empty { font-size: 12px; color: var(--muted); }
-
   .netwrap { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start; }
-  .net svg { display: block; }
+  .net svg { display: block; max-width: 100%; height: auto; }
   .state { font: 12px/1.7 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
   .state b { color: var(--muted); font-weight: 500; }
   .kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
 
+  /* real cube */
+  .real { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 1.2fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .real { grid-template-columns: minmax(0, 1fr); } }
+  .real .col { display: grid; gap: 10px; min-width: 0; }
+  .swatches { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .sw { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer; display: grid; place-items: center; font: 600 12px var(--body); color: rgba(0,0,0,0.6); }
+  .sw.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--panel); }
+  .editnet rect { cursor: pointer; }
+  .steps { font-size: 13px; }
+  .steps ol { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 2px; }
+  .steps li.cur { font-weight: 600; }
+  .steps li.done { color: var(--muted); }
+  .maprow { display: flex; gap: 10px; flex-wrap: wrap; font: 12px var(--mono); color: var(--muted); }
+  .maprow i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 3px; }
+  .big { font-family: var(--display); font-size: 22px; font-weight: 700; }
+  p.help { margin: 0; font-size: 13px; color: var(--muted); }
   @media (prefers-reduced-motion: reduce) { .mv, .btn { transition: none; } }
 </style>
 </head>
@@ -167,6 +137,7 @@
   <main>
     <div class="stage">
       <canvas id="cv"></canvas>
+      <span class="pill modetag" id="modeTag" hidden>真实魔方配色</span>
       <div class="axes">x → right<br>y → back<br>z → top</div>
       <div class="hint">拖动旋转视角 · 滚轮缩放 · 键盘 <span class="kbd">T</span> <span class="kbd">R</span> <span class="kbd">F</span>，按住 Shift 反向</div>
     </div>
@@ -187,12 +158,13 @@
 
       <section>
         <h2>动作序列 <span>t1 r3 f2 · 0 5 7 · U R' F2 都可以</span></h2>
-        <label class="field" for="seq">输入序列后播放，或点“最短解法”自动求解并填入
+        <label class="field" for="seq">输入序列后播放，或让求解器填入
           <input type="text" id="seq" placeholder="t1 r3 f2 …" autocomplete="off" spellcheck="false">
         </label>
         <div class="row">
           <button class="btn primary" id="btnPlay">播放</button>
-          <button class="btn" id="btnSolve">最短解法</button>
+          <button class="btn" id="btnPolicy" title="查训练好的 Q 表策略">策略解法</button>
+          <button class="btn" id="btnSolve" title="双向 BFS">最短解法</button>
           <button class="btn" id="btnStop">停止</button>
         </div>
         <div class="msg" id="seqMsg"></div>
@@ -207,237 +179,95 @@
       </section>
     </div>
   </main>
+
+  <section id="realSec">
+    <h2>真实魔方 <span>把训练好的策略用到手里的魔方上</span></h2>
+    <div class="real">
+      <div class="col">
+        <p class="help">拿起魔方，任选一个角块放在<b>后·左·下</b>的位置（求解过程中这个角块始终不动，只转上层 U、右层 R、前层 F）。然后把看到的 24 张贴纸颜色填进展开图：先点颜色，再点格子。展开图中间一行从左到右是左、前、右、后四个面，上面是顶面（靠上一侧是后面），下面是底面（靠上一侧是前面）。</p>
+        <div class="swatches" id="swatches"></div>
+        <div class="net editnet" id="editNet"></div>
+        <label class="field" for="realText">24 个字母（W 白 Y 黄 G 绿 B 蓝 R 红 O 橙），顺序同 rubik.py
+          <input type="text" id="realText" maxlength="24" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row">
+          <button class="btn primary" id="btnReal">识别并求解</button>
+          <button class="btn" id="btnRealExample">填入随机示例</button>
+          <button class="btn" id="btnRealExit" hidden>退出真实魔方模式</button>
+        </div>
+        <div class="msg" id="realMsg"></div>
+      </div>
+      <div class="col" id="realOut" hidden>
+        <div class="maprow" id="realMap"></div>
+        <div class="state" id="realEnv"></div>
+        <div class="steps" id="realSteps"></div>
+        <div class="row">
+          <button class="btn primary" id="btnStepNext">下一步</button>
+          <button class="btn" id="btnStepAuto">自动播放</button>
+          <button class="btn" id="btnStepReset">回到起点</button>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="cube-model.js"></script>
+<script src="cube-3d.js"></script>
 <script>
 (function () {
-  // ---------- Model: identical to rubik.py ----------
-  const F = 0, R = 1, T = 2, B = 3, L = 4, D = 5;
-  const LT = 0, RT = 1, RB = 2, LB = 3;
-  const FACE_NAME = ['front', 'right', 'top', 'back', 'left', 'bottom'];
-  const INIT = [['w','g','g','b'], ['r','y','m','r'], ['g','r','w','r'], ['b','m','b','w'], ['y','b','y','w'], ['m','y','g','m']];
-  const ACTIONS = ['t1','t2','t3','r1','r2','r3','f1','f2','f3'];
-  const NOTATION = ['U','U2',"U'",'R','R2',"R'",'F','F2',"F'"];
-  const INVERSE = [2,1,0, 5,4,3, 8,7,6];
-  const COLORS = { w:'#F4F3EE', g:'#27A64A', b:'#2E67D9', r:'#D93A31', y:'#F5C531', m:'#D6449C' };
+  const M = window.CubeModel;
+  const { ACTIONS, NOTATION, INVERSE, INIT, SOLVED, FACE_NAMES, ENV_COLORS, REAL_COLORS, REAL_LETTERS, REAL_NAMES } = M;
+  const $ = id => document.getElementById(id);
+  const LT = 0, RT = 1, RB = 2, LB = 3, F = 0, R = 1, T = 2, B = 3, L = 4, D = 5;
 
-  const clone = s => s.map(f => f.slice());
+  // ---------- state ----------
+  let state = INIT;              // 24 letters; env letters normally, real-cube letters in real mode
+  let palette = ENV_COLORS;
+  let realMode = false;
+  let history = [];
+  let queue = [];                // {a, dur}
+  let policy = null;             // Uint8Array or null
+  let policyStatus = 'loading';
+  let realPlan = null;           // {start, moves, pos}
 
-  function twistTop(s) {
-    const p = clone(s);
-    s[F][LT] = p[R][LT]; s[F][RT] = p[R][RT];
-    s[L][LT] = p[F][LT]; s[L][RT] = p[F][RT];
-    s[B][LT] = p[L][LT]; s[B][RT] = p[L][RT];
-    s[R][LT] = p[B][LT]; s[R][RT] = p[B][RT];
-    s[T][LT] = p[T][LB]; s[T][RT] = p[T][LT]; s[T][RB] = p[T][RT]; s[T][LB] = p[T][RB];
-  }
-  function twistRight(s) {
-    const p = clone(s);
-    s[F][RT] = p[D][RT]; s[F][RB] = p[D][RB];
-    s[T][RT] = p[F][RT]; s[T][RB] = p[F][RB];
-    s[B][LB] = p[T][RT]; s[B][LT] = p[T][RB];
-    s[D][RT] = p[B][LB]; s[D][RB] = p[B][LT];
-    s[R][LT] = p[R][LB]; s[R][RT] = p[R][LT]; s[R][RB] = p[R][RT]; s[R][LB] = p[R][RB];
-  }
-  function twistFront(s) {
-    const p = clone(s);
-    s[R][LT] = p[T][LB]; s[R][LB] = p[T][RB];
-    s[T][LB] = p[L][RB]; s[T][RB] = p[L][RT];
-    s[L][RT] = p[D][LT]; s[L][RB] = p[D][RT];
-    s[D][LT] = p[R][LB]; s[D][RT] = p[R][LT];
-    s[F][LT] = p[F][LB]; s[F][RT] = p[F][LT]; s[F][RB] = p[F][RT]; s[F][LB] = p[F][RB];
-  }
-  const TWIST = [twistTop, twistRight, twistFront];
-  function applyAction(s, a) { const k = a % 3 + 1; for (let i = 0; i < k; i++) TWIST[Math.floor(a / 3)](s); }
-  function check(s) { let n = 0; for (let f = 0; f < 6; f++) if (new Set(s[f]).size === 1) n++; return n; }
-  const key = s => s.map(f => f.join('')).join('');
-  const fromKey = k => [0,1,2,3,4,5].map(f => k.slice(f * 4, f * 4 + 4).split(''));
-
-  // Corners: (cubie position, its three sticker slots). back-left-bottom never moves under t/r/f.
-  const CORNERS = [
-    [[F,RT],[R,LT],[T,RB]], [[F,LT],[L,RT],[T,LB]], [[F,RB],[R,LB],[D,RT]], [[F,LB],[L,RB],[D,LT]],
-    [[B,LT],[R,RT],[T,RT]], [[B,RT],[L,LT],[T,LT]], [[B,LB],[R,RB],[D,RB]], [[B,RB],[L,LB],[D,LB]],
-  ];
-  function solvedTarget(s) {
-    // Derive the solved state implied by the fixed corner and the colour pairing; null if impossible.
-    const adj = {};
-    for (const c of CORNERS) {
-      const cols = c.map(([f, p]) => s[f][p]);
-      if (new Set(cols).size !== 3) return null;
-      for (const a of cols) { adj[a] = adj[a] || new Set(); for (const b of cols) if (a !== b) adj[a].add(b); }
-    }
-    const all = Object.keys(adj);
-    if (all.length !== 6) return null;
-    const opp = {};
-    for (const a of all) { const rest = all.filter(b => b !== a && !adj[a].has(b)); if (rest.length !== 1) return null; opp[a] = rest[0]; }
-    const back = s[B][RB], left = s[L][LB], bottom = s[D][LB];
-    const t = [];
-    t[F] = opp[back]; t[R] = opp[left]; t[T] = opp[bottom]; t[B] = back; t[L] = left; t[D] = bottom;
-    return t.map(c => [c, c, c, c]);
-  }
-  function bfsLayer(start, depth) {
-    const seen = new Map([[key(start), [null, -1]]]);
-    let frontier = [start];
-    for (let d = 0; d < depth; d++) {
-      const next = [];
-      for (const s of frontier) {
-        const ks = key(s);
-        for (let a = 0; a < 9; a++) {
-          const n = clone(s); applyAction(n, a); const kn = key(n);
-          if (!seen.has(kn)) { seen.set(kn, [ks, a]); next.push(n); }
-        }
-      }
-      frontier = next;
-    }
-    return seen;
-  }
-  function pathTo(seen, k) { const out = []; while (seen.get(k)[0] !== null) { const [prev, a] = seen.get(k); out.push(a); k = prev; } return out.reverse(); }
-  function solve(s) {
-    const target = solvedTarget(s);
-    if (!target) return { error: 'invalid' };
-    if (key(s) === key(target)) return { moves: [] };
-    const fwd = bfsLayer(s, 6), bwd = bfsLayer(target, 6);
-    let best = null;
-    for (const k of fwd.keys()) {
-      if (!bwd.has(k)) continue;
-      const p = pathTo(fwd, k).concat(pathTo(bwd, k).reverse().map(a => INVERSE[a]));
-      if (!best || p.length < best.length) best = p;
-    }
-    return best ? { moves: best } : { error: 'unreachable' };
-  }
-
-  // ---------- Geometry: sticker slots from rubik.py's update_rubik ----------
-  // [face][pos] -> {c: centre, n: outward normal}
-  const SLOT = [];
-  SLOT[F] = { [LT]: [-0.5,-1, 0.5], [LB]: [-0.5,-1,-0.5], [RT]: [ 0.5,-1, 0.5], [RB]: [ 0.5,-1,-0.5] };
-  SLOT[B] = { [RT]: [-0.5, 1, 0.5], [RB]: [-0.5, 1,-0.5], [LT]: [ 0.5, 1, 0.5], [LB]: [ 0.5, 1,-0.5] };
-  SLOT[R] = { [LT]: [ 1,-0.5, 0.5], [RT]: [ 1, 0.5, 0.5], [LB]: [ 1,-0.5,-0.5], [RB]: [ 1, 0.5,-0.5] };
-  SLOT[L] = { [RT]: [-1,-0.5, 0.5], [LT]: [-1, 0.5, 0.5], [RB]: [-1,-0.5,-0.5], [LB]: [-1, 0.5,-0.5] };
-  SLOT[T] = { [LT]: [-0.5, 0.5, 1], [RT]: [ 0.5, 0.5, 1], [RB]: [ 0.5,-0.5, 1], [LB]: [-0.5,-0.5, 1] };
-  SLOT[D] = { [LB]: [-0.5, 0.5,-1], [RB]: [ 0.5, 0.5,-1], [RT]: [ 0.5,-0.5,-1], [LT]: [-0.5,-0.5,-1] };
-  const NORMAL = []; NORMAL[F] = [0,-1,0]; NORMAL[B] = [0,1,0]; NORMAL[R] = [1,0,0]; NORMAL[L] = [-1,0,0]; NORMAL[T] = [0,0,1]; NORMAL[D] = [0,0,-1];
-  // layer: 0 top (z>0, about z), 1 right (x>0, about x), 2 front (y<0, about y)
-  const LAYER = [
-    { axis: 'z', sign: -1, sel: p => p.z > 0.1 },
-    { axis: 'x', sign: -1, sel: p => p.x > 0.1 },
-    { axis: 'y', sign:  1, sel: p => p.y < -0.1 },
-  ];
-
-  // ---------- Three.js scene ----------
-  const canvas = document.getElementById('cv');
-  const has3d = typeof THREE !== 'undefined';
-  let scene, camera, root, pivot;
-  const cubies = [], stickers = []; // stickers: {face,pos,mesh,pos0,quat0}
-  if (!has3d) {
+  const canvas = $('cv');
+  if (!window.CubeView.available) {
     const note = document.createElement('div'); note.className = 'nolib';
     note.textContent = '3D 库（three.js, cdnjs）没有加载成功，只显示右侧展开图。';
     canvas.parentNode.appendChild(note);
   }
-  const renderer = has3d ? new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }) : null;
-  if (has3d) {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x000000, 0);
-  renderer.outputEncoding = THREE.sRGBEncoding;
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-  camera.up.set(0, 0, 1);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x50566a, 0.95));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(3, -4, 6); scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.25); fill.position.set(-4, 3, -2); scene.add(fill);
+  const view = window.CubeView.create(canvas, { palette, state });
 
-  root = new THREE.Group(); scene.add(root);
-  pivot = new THREE.Group(); root.add(pivot);
+  const envState = () => realMode ? M.fromReal(state).env : state;
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.55, metalness: 0.05 });
-  const cubieGeo = new THREE.BoxGeometry(0.97, 0.97, 0.97);
-  for (const x of [-0.5, 0.5]) for (const y of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
-    const m = new THREE.Mesh(cubieGeo, bodyMat); m.position.set(x, y, z); root.add(m); cubies.push(m);
-  }
-  function roundedRect(w, h, r) {
-    const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
-    s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
-    s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
-    s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
-    return s;
-  }
-  const stickerGeo = new THREE.ShapeGeometry(roundedRect(0.84, 0.84, 0.12));
-  for (let f = 0; f < 6; f++) for (let p = 0; p < 4; p++) {
-    const c = SLOT[f][p], n = NORMAL[f];
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0 });
-    const mesh = new THREE.Mesh(stickerGeo, mat);
-    // sit just outside the cubie surface (cubie face is at 0.985 from origin along the normal)
-    mesh.position.set(c[0] - n[0] * 0.006, c[1] - n[1] * 0.006, c[2] - n[2] * 0.006);
-    if (n[2] !== 0) mesh.up.set(0, 1, 0); else mesh.up.set(0, 0, 1);
-    mesh.lookAt(mesh.position.x + n[0], mesh.position.y + n[1], mesh.position.z + n[2]);
-    root.add(mesh);
-    stickers.push({ face: f, pos: p, mesh, pos0: mesh.position.clone(), quat0: mesh.quaternion.clone() });
-  }
-
-  // camera orbit (z-up)
-  let theta = -0.95, phi = 0.48, dist = 6.4;
-  function placeCamera() {
-    camera.position.set(dist * Math.cos(phi) * Math.cos(theta), dist * Math.cos(phi) * Math.sin(theta), dist * Math.sin(phi));
-    camera.lookAt(0, 0, 0);
-  }
-  let drag = null;
-  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
-  canvas.addEventListener('pointermove', e => {
-    if (!drag) return;
-    theta -= (e.clientX - drag.x) * 0.008; phi += (e.clientY - drag.y) * 0.008;
-    phi = Math.max(-1.45, Math.min(1.45, phi)); drag = { x: e.clientX, y: e.clientY }; placeCamera();
-  });
-  canvas.addEventListener('pointerup', () => { drag = null; });
-  canvas.addEventListener('pointercancel', () => { drag = null; });
-  canvas.addEventListener('wheel', e => { e.preventDefault(); dist = Math.max(4, Math.min(11, dist + e.deltaY * 0.004)); placeCamera(); }, { passive: false });
-  function resize() {
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    if (!w || !h) return;
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
-  }
-  new ResizeObserver(resize).observe(canvas);
-  resize(); placeCamera();
-  }
-
-  // ---------- State + view sync ----------
-  let state = clone(INIT);
-  let history = [];      // actions since last reset
-  let busy = false;
-  let queue = [];        // {a, dur}
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const $ = id => document.getElementById(id);
-
-  function paintStickers() {
-    if (!has3d) return;
-    for (const st of stickers) st.mesh.material.color.set(COLORS[state[st.face][st.pos]]).convertSRGBToLinear();
-  }
-  function resetTransforms() {
-    if (!has3d) return;
-    for (const st of stickers) { st.mesh.position.copy(st.pos0); st.mesh.quaternion.copy(st.quat0); }
-    for (const c of cubies) { c.position.set(Math.sign(c.position.x) * 0.5, Math.sign(c.position.y) * 0.5, Math.sign(c.position.z) * 0.5); c.rotation.set(0, 0, 0); }
-    pivot.rotation.set(0, 0, 0);
-  }
-  function renderNet() {
-    const cell = 20, gap = 2, pad = 6, faceW = 2 * cell + gap;
-    // net columns: L F R B ; T above F ; D below F
-    const col = { [L]: 0, [F]: 1, [R]: 2, [B]: 3, [T]: 1, [D]: 1 };
-    const row = { [T]: 0, [L]: 1, [F]: 1, [R]: 1, [B]: 1, [D]: 2 };
+  // ---------- rendering ----------
+  function netSvg(str, pal, cell, gap, pad, cls) {
+    const faceW = 2 * cell + gap;
+    const col = { [L]: 0, [F]: 1, [R]: 2, [B]: 3, [T]: 1, [D]: 1 }, row = { [T]: 0, [L]: 1, [F]: 1, [R]: 1, [B]: 1, [D]: 2 };
     const W = 4 * faceW + 3 * pad, H = 3 * faceW + 2 * pad;
     let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="魔方展开图">`;
-    const order = [LT, RT, LB, RB];
     for (let f = 0; f < 6; f++) {
       const ox = col[f] * (faceW + pad), oy = row[f] * (faceW + pad);
-      order.forEach((p, i) => {
-        const x = ox + (i % 2) * (cell + gap), y = oy + Math.floor(i / 2) * (cell + gap);
-        svg += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3" fill="${COLORS[state[f][p]]}" stroke="rgba(0,0,0,0.25)"><title>${FACE_NAME[f]}[${p}] = ${state[f][p]}</title></rect>`;
+      [LT, RT, LB, RB].forEach((p, i) => {
+        const x = ox + (i % 2) * (cell + gap), y = oy + Math.floor(i / 2) * (cell + gap), c = str[f * 4 + p];
+        svg += `<rect data-i="${f * 4 + p}" x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3" fill="${pal[c] || '#9aa'}" stroke="rgba(0,0,0,0.25)"><title>${FACE_NAMES[f]}[${p}] = ${c}</title></rect>`;
       });
+      if (cls) svg += `<text x="${ox + faceW / 2}" y="${oy + faceW / 2 + 4}" text-anchor="middle" font-size="11" fill="rgba(0,0,0,0.45)" pointer-events="none">${['前', '右', '上', '后', '左', '下'][f]}</text>`;
     }
-    svg += '</svg>';
-    $('net').innerHTML = svg;
+    return svg + '</svg>';
+  }
+  function policyMark() {
+    document.querySelectorAll('.mv').forEach(b => b.classList.remove('pol'));
+    if (!policy) return;
+    try {
+      const e = envState(); if (e === SOLVED) return;
+      const a = M.policyAction(policy, M.encode(e));
+      document.querySelectorAll('.mv')[a].classList.add('pol');
+    } catch (err) { /* illegal state: no mark */ }
   }
   function renderState() {
-    const faces = check(state);
+    const faces = M.check(state);
     $('stFaces').textContent = faces;
     $('stPips').innerHTML = Array.from({ length: 6 }, (_, i) => `<span class="pip${i < faces ? ' on' : ''}"></span>`).join('');
     const done = faces > 1;
@@ -446,56 +276,34 @@
     $('history').innerHTML = history.length
       ? history.map((a, i) => `<span class="tok${i === history.length - 1 ? ' last' : ''}">${ACTIONS[a]}</span>`).join('')
       : '<span class="empty">还没有动作。点击上方按钮，或按 T / R / F。</span>';
-    $('stateText').innerHTML = FACE_NAME.map((n, f) => `<b>${n.padEnd(6, ' ').replace(/ /g, '&nbsp;')}</b> ${state[f].join(' ')}`).join('<br>')
-      + `<br><b>state&nbsp;</b> ${key(state)}`;
-    renderNet();
-    $('btnUndo').disabled = history.length === 0 || busy;
-    document.querySelectorAll('.mv').forEach(b => { b.disabled = busy; });
-  }
-  function commit() { paintStickers(); renderState(); }
-
-  function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
-  function animateAction(a, dur, done) {
-    if (!has3d) { applyAction(state, a); commit(); done(); return; }
-    const layer = LAYER[Math.floor(a / 3)], k = a % 3 + 1;
-    const quarters = k === 3 ? -1 : k;
-    const target = layer.sign * quarters * Math.PI / 2;
-    const parts = cubies.concat(stickers.map(s => s.mesh)).filter(m => layer.sel(m.position));
-    parts.forEach(m => pivot.attach(m));
-    const t0 = performance.now();
-    const total = reduced ? 0 : dur * (k === 2 ? 1.35 : 1);
-    function step(now) {
-      const t = total ? Math.min(1, (now - t0) / total) : 1;
-      pivot.rotation[layer.axis] = target * easeInOutCubic(t);
-      if (t < 1) { requestAnimationFrame(step); return; }
-      parts.forEach(m => root.attach(m));
-      resetTransforms();
-      applyAction(state, a);
-      commit();
-      done();
-    }
-    requestAnimationFrame(step);
-  }
-  function pump() {
-    if (busy || !queue.length) { if (!busy) renderState(); return; }
-    const { a, dur } = queue.shift();
-    busy = true; renderState();
-    animateAction(a, dur, () => { busy = false; pump(); });
-  }
-  function enqueue(a, dur) {
-    history.push(a);
-    queue.push({ a, dur: dur ?? Number($('speed').value) });
-    pump();
-  }
-  function setState(next, msg) {
-    queue = []; state = clone(next); history = []; commit();
-    if (msg !== undefined) setMsg(msg);
+    $('stateText').innerHTML = FACE_NAMES.map((n, f) => `<b>${n.padEnd(6, ' ').replace(/ /g, '&nbsp;')}</b> ${state.slice(f * 4, f * 4 + 4).split('').join(' ')}`).join('<br>')
+      + `<br><b>state&nbsp;</b> ${state}` + (realMode ? `<br><b>env&nbsp;&nbsp;&nbsp;</b> ${envState()}` : '');
+    $('net').innerHTML = netSvg(state, palette, 20, 2, 6, false);
+    $('btnUndo').disabled = history.length === 0 || view.busy;
+    document.querySelectorAll('.mv').forEach(b => { b.disabled = view.busy; });
+    $('modeTag').hidden = !realMode;
+    policyMark();
   }
   function setMsg(text, kind) { const el = $('seqMsg'); el.textContent = text; el.className = 'msg' + (kind ? ' ' + kind : ''); }
 
-  // ---------- Controls ----------
+  // ---------- move queue ----------
+  function pump() {
+    if (view.busy || !queue.length) { if (!view.busy) renderState(); return; }
+    const { a, dur } = queue.shift();
+    const next = M.applyStr(state, a);
+    renderState();
+    view.animate(a, dur, next, () => { state = next; if (realPlan) stepAdvance(a); pump(); });
+    document.querySelectorAll('.mv').forEach(b => { b.disabled = true; });
+  }
+  function enqueue(a, dur) { history.push(a); queue.push({ a, dur: dur ?? Number($('speed').value) }); pump(); }
+  function setState(next, msg) {
+    queue = []; state = next; history = []; view.setState(state); renderState();
+    if (msg !== undefined) setMsg(msg);
+  }
+
+  // ---------- controls ----------
   const movesEl = $('moves');
-  [['Top', 't'], ['Right', 'r'], ['Front', 'f']].forEach(([name, code], row) => {
+  [['Top', 't'], ['Right', 'r'], ['Front', 'f']].forEach(([name], row) => {
     const lab = document.createElement('div'); lab.className = 'rowlab'; lab.innerHTML = `<b>${name}</b>twist_${name.toLowerCase()}`; movesEl.appendChild(lab);
     for (let k = 0; k < 3; k++) {
       const a = row * 3 + k;
@@ -506,24 +314,20 @@
     }
   });
   $('btnUndo').addEventListener('click', () => {
-    if (busy || !history.length) return;
+    if (view.busy || !history.length) return;
     const last = history.pop();
-    // play the inverse without recording it
     queue.push({ a: INVERSE[last], dur: Number($('speed').value) }); pump();
   });
   $('btnScramble').addEventListener('click', () => {
     let prev = -1;
-    for (let i = 0; i < 10; i++) {
-      let layer; do { layer = Math.floor(Math.random() * 3); } while (layer === prev);
-      prev = layer; enqueue(layer * 3 + Math.floor(Math.random() * 3), 110);
-    }
+    for (let i = 0; i < 10; i++) { let layer; do { layer = Math.floor(Math.random() * 3); } while (layer === prev); prev = layer; enqueue(layer * 3 + Math.floor(Math.random() * 3), 110); }
     setMsg('');
   });
-  $('btnReset').addEventListener('click', () => setState(INIT, ''));
+  $('btnReset').addEventListener('click', () => { exitReal(); setState(INIT, ''); });
   $('btnSolvedState').addEventListener('click', () => {
-    const t = solvedTarget(state);
+    const t = M.solvedTarget(state);
     if (t) setState(t, '已切换到与当前固定角块（back-left-bottom）一致的复原态。');
-    else setState([['g','g','g','g'],['r','r','r','r'],['y','y','y','y'],['b','b','b','b'],['w','w','w','w'],['m','m','m','m']], '当前状态的角块颜色不自洽，改用默认复原态。', 'warn');
+    else setState(SOLVED, '当前状态的角块颜色不自洽，改用默认复原态。', 'warn');
   });
   $('btnStop').addEventListener('click', () => { history.length -= queue.length; queue = []; renderState(); });
 
@@ -545,19 +349,33 @@
   $('btnPlay').addEventListener('click', playSeq);
   $('seq').addEventListener('keydown', e => { if (e.key === 'Enter') playSeq(); });
   $('btnSolve').addEventListener('click', () => {
-    if (busy) return;
+    if (view.busy) return;
     setMsg('正在做双向 BFS 搜索…');
     setTimeout(() => {
-      const r = solve(state);
+      let e; try { e = envState(); } catch (err) { setMsg(String(err.message || err), 'warn'); return; }
+      const r = M.optimalSolve(e);
       if (r.error === 'invalid') { setMsg('当前状态的角块颜色不自洽，不是一个物理上存在的魔方，无法求解。', 'warn'); return; }
-      if (r.error === 'unreachable') { setMsg('12 步内搜不到解。合法状态最多 11 步可复原，所以这个状态不可复原（角块方向或排列奇偶性不对）。', 'warn'); return; }
+      if (r.error === 'unreachable') { setMsg('12 步内搜不到解。合法状态最多 11 步可复原，所以这个状态不可复原。', 'warn'); return; }
       if (!r.moves.length) { setMsg('已经是复原态。', 'good'); return; }
       $('seq').value = r.moves.map(a => ACTIONS[a]).join(' ');
       setMsg(`最短解 ${r.moves.length} 步：${r.moves.map(a => NOTATION[a]).join(' ')}`, 'good');
       r.moves.forEach(a => enqueue(a));
     }, 20);
   });
-
+  $('btnPolicy').addEventListener('click', () => {
+    if (view.busy) return;
+    if (!policy) { setMsg(policyStatus === 'loading' ? '策略文件还在加载…' : '策略文件不可用：本地请用 python play_rubik.py serve 打开本页，或先训练。', 'warn'); return; }
+    let e; try { e = envState(); } catch (err) { setMsg(String(err.message || err), 'warn'); return; }
+    const lg = M.legality(e);
+    if (!lg.ok) { setMsg('无法查表：' + lg.reason, 'warn'); return; }
+    const r = M.policySolve(e, policy);
+    if (!r.moves.length) { setMsg('已经是复原态。', 'good'); return; }
+    if (!r.solved) { setMsg(`策略走了 ${r.moves.length} 步没有解出（这个状态的表项还没学好）。`, 'warn'); return; }
+    const opt = M.optimalSolve(e);
+    $('seq').value = r.moves.map(a => ACTIONS[a]).join(' ');
+    setMsg(`Q 表策略 ${r.moves.length} 步：${r.moves.map(a => NOTATION[a]).join(' ')}${opt.moves ? `（最优 ${opt.moves.length} 步）` : ''}`, 'good');
+    r.moves.forEach(a => enqueue(a));
+  });
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
     const row = { t: 0, r: 1, f: 2 }[e.key.toLowerCase()];
@@ -565,14 +383,98 @@
     enqueue(row * 3 + (e.shiftKey ? 2 : 0));
   });
 
-  // ---------- Boot (keeps state across republishes) ----------
+  // ---------- policy file ----------
+  function loadPolicy(onOk) {
+    // policy.bin from play_rubik.py serve; policy.json (base64) when published as an artifact
+    const fromB64 = b64 => { const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+    return fetch('policy.bin', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => new Uint8Array(b))
+      .catch(() => fetch('policy.json', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(j => fromB64(j.b64)))
+      .then(onOk);
+  }
+  loadPolicy(u => { policy = u; policyStatus = 'ok'; renderState(); }).catch(() => { policyStatus = 'missing'; });
+
+  // ---------- real cube ----------
+  let realStr = 'WWWWWWWWWWWWWWWWWWWWWWWW'.replace(/./g, () => 'W');
+  let brush = 'W';
+  const REAL_ORDER = 'WYGBRO';
+  function renderSwatches() {
+    $('swatches').innerHTML = [...REAL_ORDER].map(c => `<button type="button" class="sw${c === brush ? ' on' : ''}" data-c="${c}" style="background:${REAL_COLORS[c]}" title="${REAL_NAMES[c]}">${REAL_NAMES[c]}</button>`).join('')
+      + `<span class="msg">先选颜色，再点格子</span>`;
+    $('swatches').querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => { brush = b.dataset.c; renderSwatches(); }));
+  }
+  function renderEditNet() {
+    $('editNet').innerHTML = netSvg(realStr, REAL_COLORS, 30, 3, 10, true);
+    $('editNet').querySelectorAll('rect').forEach(r => r.addEventListener('click', () => {
+      const i = Number(r.dataset.i); realStr = realStr.slice(0, i) + brush + realStr.slice(i + 1);
+      $('realText').value = realStr; renderEditNet();
+    }));
+    if ($('realText').value !== realStr) $('realText').value = realStr;
+  }
+  $('realText').addEventListener('input', () => {
+    const v = $('realText').value.toUpperCase().replace(/[^WYGBRO]/g, '');
+    if (v.length === 24) { realStr = v; renderEditNet(); }
+  });
+  $('btnRealExample').addEventListener('click', () => {
+    // a random legal scramble, coloured like a real cube (env b/w/m/g/y/r -> B/W/O/G/Y/R)
+    let s = SOLVED; let prev = -1;
+    for (let i = 0; i < 12; i++) { let layer; do { layer = Math.floor(Math.random() * 3); } while (layer === prev); prev = layer; s = M.applyStr(s, layer * 3 + Math.floor(Math.random() * 3)); }
+    const map = { b: 'B', w: 'W', m: 'O', g: 'G', y: 'Y', r: 'R' };
+    realStr = [...s].map(c => map[c]).join(''); renderEditNet();
+    setRealMsg('已填入一个随机打乱（示例配色：白对黄、绿对蓝、红对橙）。点“识别并求解”。');
+  });
+  function setRealMsg(t, kind) { const el = $('realMsg'); el.textContent = t; el.className = 'msg' + (kind ? ' ' + kind : ''); }
+  function exitReal() {
+    if (!realMode) return;
+    realMode = false; realPlan = null; palette = ENV_COLORS; view.setPalette(palette);
+    $('realOut').hidden = true; $('btnRealExit').hidden = true; $('modeTag').hidden = true;
+  }
+  $('btnRealExit').addEventListener('click', () => { exitReal(); setState(INIT, ''); setRealMsg(''); });
+  $('btnReal').addEventListener('click', () => {
+    const r = M.fromReal(realStr);
+    if (r.error) { setRealMsg(r.error, 'warn'); return; }
+    const lg = M.legality(r.env);
+    realMode = true; palette = REAL_COLORS; view.setPalette(palette);
+    queue = []; state = realStr; history = []; view.setState(state);
+    $('btnRealExit').hidden = false; $('realOut').hidden = false;
+    $('realMap').innerHTML = '颜色重标注：' + Object.keys(r.map).map(c => `<span><i style="background:${REAL_COLORS[c]}"></i>${REAL_NAMES[c]} → ${r.map[c]}</span>`).join('');
+    let moves, source;
+    if (policy) {
+      const ps = M.policySolve(r.env, policy);
+      if (ps.solved) { moves = ps.moves; source = 'Q 表策略'; }
+    }
+    const opt = M.optimalSolve(r.env);
+    if (!moves) { if (opt.moves) { moves = opt.moves; source = policy ? '最短解（策略未能解出）' : '最短解（策略文件未加载）'; } else { setRealMsg('这个状态无法复原，请检查输入。', 'warn'); return; } }
+    $('realEnv').innerHTML = `<b>env&nbsp;&nbsp;&nbsp;</b> ${r.env}<br><b>index&nbsp;</b> ${M.encode(r.env)}<br><b>来源&nbsp;&nbsp;</b> ${source}，${moves.length} 步${opt.moves ? `（最优 ${opt.moves.length} 步）` : ''}`;
+    realPlan = { start: realStr, moves, pos: 0 };
+    renderSteps();
+    renderState();
+    setRealMsg(moves.length ? '识别成功。按“下一步”，3D 会演示这一步怎么转；照着转手里的魔方。' : '已经是复原态。', 'good');
+  });
+  const DESC = { t: '上层（U）', r: '右层（R）', f: '前层（F）' };
+  function moveWords(a) { const n = NOTATION[a]; const k = a % 3; return `${n} — ${DESC[ACTIONS[a][0]]}${['顺时针 90°', '180°', '逆时针 90°'][k]}` + (k !== 1 ? '，从该面正对着看' : ''); }
+  function renderSteps() {
+    if (!realPlan) return;
+    const { moves, pos } = realPlan;
+    $('realSteps').innerHTML = moves.length ? `<div>第 <span class="big">${Math.min(pos + 1, moves.length)}</span> / ${moves.length} 步</div><ol>` + moves.map((a, i) => `<li class="${i < pos ? 'done' : i === pos ? 'cur' : ''}">${moveWords(a)}</li>`).join('') + '</ol>' : '<div>已经是复原态。</div>';
+    $('btnStepNext').disabled = pos >= moves.length;
+  }
+  function stepAdvance(a) { if (realPlan && realPlan.moves[realPlan.pos] === a) { realPlan.pos++; renderSteps(); } }
+  $('btnStepNext').addEventListener('click', () => { if (!realPlan || view.busy || realPlan.pos >= realPlan.moves.length) return; enqueue(realPlan.moves[realPlan.pos], 600); });
+  $('btnStepAuto').addEventListener('click', () => { if (!realPlan) return; for (let i = realPlan.pos; i < realPlan.moves.length; i++) enqueue(realPlan.moves[i], 600); });
+  $('btnStepReset').addEventListener('click', () => { if (!realPlan) return; queue = []; realPlan.pos = 0; state = realPlan.start; history = []; view.setState(state); renderSteps(); renderState(); });
+
+  // ---------- boot (keeps state across republishes) ----------
   if (window.claude && window.claude.hot && window.claude.hot.snapshot) {
-    window.claude.hot.snapshot(() => ({ state: key(state), history: history.slice(), seq: $('seq').value }));
+    window.claude.hot.snapshot(() => ({ state, realMode, history: history.slice(), seq: $('seq').value, realStr }));
   }
   function start(data) {
-    if (data && data.state && data.state.length === 24) { state = fromKey(data.state); history = data.history || []; if (data.seq) $('seq').value = data.seq; }
-    commit();
-    if (has3d) (function loop() { renderer.render(scene, camera); requestAnimationFrame(loop); })();
+    if (data && data.state && data.state.length === 24) {
+      state = data.state; history = data.history || []; if (data.seq) $('seq').value = data.seq;
+      if (data.realStr) realStr = data.realStr;
+      if (data.realMode) { realMode = true; palette = REAL_COLORS; view.setPalette(palette); $('btnRealExit').hidden = false; }
+    }
+    renderSwatches(); renderEditNet();
+    view.setState(state); renderState();
   }
   if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start);
   else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
