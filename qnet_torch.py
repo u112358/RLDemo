@@ -62,10 +62,16 @@ class TorchNetTrainer:
     def __init__(self, layers=(1024, 1024, 512), lr=1e-3, batch=8192, device='auto', all_actions=True,
                  k_margin=2, weight_by_depth=False, promote=0.97, max_k=MAX_DEPTH, k_start=1,
                  target_every=200, n_envs=64, eps=0.1, episode_cap=25, buffer=500000, updates_per_step=1,
-                 seed=0):
+                 seed=0, amp=False):
         torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
         self.device = pick_device(device)
+        if self.device.type == 'cuda':
+            # TF32 matmuls: ~2-3x faster on Ampere/Ada, plenty of precision for this loss
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        # bf16 autocast for the forward passes (CUDA and CPU; MPS autocast is not reliable)
+        self.amp = bool(amp) and self.device.type in ('cuda', 'cpu')
         self.T = np.ascontiguousarray(rb.transitions())
         self.dist = rb.bfs_distances(self.T)
         self.by_depth = [np.nonzero(self.dist == d)[0] for d in range(MAX_DEPTH + 1)]
@@ -124,7 +130,8 @@ class TorchNetTrainer:
         return self._scramble_t(d).cpu().numpy()
 
     def _q(self, idx_t, model=None):
-        return (model or self.net)(self.feats[idx_t].float())
+        with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.amp):
+            return (model or self.net)(self.feats[idx_t].float()).float()
 
     def qvalues(self, idx):
         with torch.no_grad():

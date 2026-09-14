@@ -358,6 +358,8 @@ def fmt_row(rec):
     extra = ''
     if rec.get('unseen_success') is not None:
         extra = '  unseen %6.2f%%  loss %.3f' % (100 * rec['unseen_success'], rec['loss'] or 0)
+    if rec.get('updates'):
+        extra += '  %.1f updates/s' % (rec['updates'] / max(rec['time'], 1e-9))
     return ('step %10d  %6.0fs  K=%2d  coverage %5.1f%%  success(random) %6.2f%%  Q-err %s  %s env-steps/s%s'
             % (rec['step'], rec['time'], rec['K'], 100 * rec['coverage'], 100 * rec['success_random'],
                '%.3f' % rec['q_error'] if rec['q_error'] is not None else '  n/a',
@@ -389,7 +391,8 @@ def train(args):
                              device=args.device, all_actions=not args.replay, k_margin=args.k_margin,
                              weight_by_depth=args.weight_by_depth, promote=args.promote, max_k=args.max_k,
                              k_start=args.k_start, target_every=args.target_every, n_envs=args.envs, eps=args.eps,
-                             episode_cap=args.cap, buffer=args.buffer, updates_per_step=args.updates_per_step, seed=args.seed)
+                             episode_cap=args.cap, buffer=args.buffer, updates_per_step=args.updates_per_step, seed=args.seed,
+                             amp=args.amp)
         print('torch network agent on %s: %s MLP, batch %d, %s targets, curriculum margin %d'
               % (tr.device, '-'.join(map(str, [24 * 6] + tr.layers + [9])), args.batch,
                  'replay Q-learning' if args.replay else 'all-actions', args.k_margin))
@@ -569,6 +572,7 @@ def main():
     t.add_argument('--device', default='auto', help='torch: auto | mps | cuda | cpu')
     t.add_argument('--layers', default='1024,1024,512', help='torch: hidden layer widths')
     t.add_argument('--replay', action='store_true', help='torch: model-free replay Q-learning instead of all-actions targets')
+    t.add_argument('--amp', action='store_true', help='torch: bf16 autocast for the forward passes (CUDA), ~2x faster')
     t.add_argument('--weight-by-depth', action='store_true', help='net: weight the loss by 1/scramble depth (DeepCube)')
     t.add_argument('--k-start', type=int, default=1, help='net: initial curriculum depth (= --max-k: no curriculum, all depths from the start)')
     t.add_argument('--buffer', type=int, default=200000, help='net: replay buffer size')
