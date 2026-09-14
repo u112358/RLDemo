@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cube Q-learning Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: light dark;
+    --ground: #EDEFF3; --panel: #FFFFFF; --panel-2: #F5F6F9;
+    --ink: #171A21; --muted: #5F6778; --faint: #8A92A3;
+    --line: #D5D9E2; --grid: #E6E9EF;
+    --good: #0ca30c; --good-bg: #DDF3E5; --warn: #B4531B; --warn-bg: #FBE9DC;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --display: "Bricolage Grotesque", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #101216; --panel: #181B21; --panel-2: #1F232B;
+      --ink: #E9EBF0; --muted: #9AA1B0; --faint: #6E7686;
+      --line: #2A2F3A; --grid: #242932;
+      --good: #4CC97E; --good-bg: #17331F; --warn: #F0A06A; --warn-bg: #3A2416;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #101216; --panel: #181B21; --panel-2: #1F232B;
+    --ink: #E9EBF0; --muted: #9AA1B0; --faint: #6E7686;
+    --line: #2A2F3A; --grid: #242932;
+    --good: #4CC97E; --good-bg: #17331F; --warn: #F0A06A; --warn-bg: #3A2416;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; padding-block: 20px 32px; padding-inline: 20px; }
+  .app { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 4px 0 0; }
+  .status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .pill.live .dot { background: var(--good); box-shadow: 0 0 0 3px var(--good-bg); }
+  .pill.done .dot { background: var(--s1); }
+  .cfg { font: 12px var(--mono); color: var(--muted); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 12px; min-width: 0; }
+  .tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+  .tile .v { font-weight: 600; font-size: 26px; line-height: 1.2; font-variant-numeric: tabular-nums; margin-top: 2px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .tile .v small { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .tile.hero .v { font-size: 34px; }
+  .pips { display: inline-flex; gap: 3px; }
+  .pip { width: 8px; height: 12px; border-radius: 2px; background: var(--grid); }
+  .pip.on { background: var(--s1); }
+  .meter { height: 6px; border-radius: 3px; background: var(--grid); margin-top: 8px; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--s1); border-radius: 3px; }
+
+  .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 820px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 8px; min-width: 0; position: relative; }
+  .card h2 { font-family: var(--display); font-size: 14px; font-weight: 700; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card h2 span { font-family: var(--body); font-weight: 400; font-size: 12px; color: var(--muted); text-align: right; }
+  .card.wide { grid-column: 1 / -1; }
+  .card svg { display: block; width: 100%; height: auto; max-width: 100%; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 4px 0 2px; }
+  .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: 12px var(--mono); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,0.12); white-space: nowrap; display: none; z-index: 2; }
+  .tip b { color: var(--muted); font-weight: 500; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+  th:first-child, td:first-child { text-align: left; }
+  td.bar { width: 40%; }
+  td.bar .track { height: 8px; background: var(--grid); border-radius: 2px 4px 4px 2px; position: relative; }
+  td.bar .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--s1); border-radius: 0 4px 4px 0; }
+  .tablewrap { overflow-x: auto; }
+  .empty { padding: 24px; text-align: center; color: var(--muted); }
+  .empty code { font: 12px var(--mono); background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }
+  .note { font-size: 12px; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .pill.live .dot { box-shadow: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Cube Q-learning Monitor</h1>
+      <p class="sub">表格式 Q-learning 覆盖二阶魔方全部 3,674,160 个状态的训练过程。反向打乱课程，每步奖励 −1，Q 值应收敛到「离复原的距离」的相反数。</p>
+    </div>
+    <div class="status">
+      <span class="pill" id="pill"><span class="dot"></span><span id="pillText">等待数据</span></span>
+      <span class="cfg" id="cfg"></span>
+    </div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="charts">
+    <div class="card"><h2>随机状态一次解出率 <span>贪心策略，按状态分布加权</span></h2><div id="cSucc"></div></div>
+    <div class="card"><h2>课程深度 K <span>训练起点 = 复原态打乱 1…K 步</span></h2><div id="cK"></div></div>
+    <div class="card"><h2>Q 表覆盖率 <span>至少更新过一次的状态比例</span></h2><div id="cCov"></div></div>
+    <div class="card"><h2>价值误差 <span>已访问状态上的 mean |Q + BFS 距离|</span></h2><div id="cErr"></div></div>
+    <div class="card wide">
+      <h2>按距离分解 <span>每个距离抽 400 个精确距离为 d 的状态，贪心走 30 步</span></h2>
+      <div id="depthChart"></div>
+      <div class="tablewrap"><table id="depthTable"></table></div>
+    </div>
+  </div>
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const DEPTH_COUNT = [1, 9, 54, 321, 1847, 9992, 50136, 227536, 870072, 1887748, 623800, 2644];
+  const fmtInt = n => n.toLocaleString('en-US');
+  const fmtCompact = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'K' : String(n);
+  const pct = x => (100 * x).toFixed(x >= 0.999 && x < 1 ? 2 : 1) + '%';
+  const fmtTime = s => s >= 3600 ? (s / 3600).toFixed(1) + ' h' : s >= 60 ? Math.floor(s / 60) + ' m ' + Math.round(s % 60) + ' s' : s.toFixed(0) + ' s';
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  let last = null, source = 'none', failures = 0;
+
+  // ---------- line chart (inline SVG, hover crosshair) ----------
+  function lineChart(el, series, opts) {
+    // series: [{name, color, points:[[x,y]]}], opts: {yMin,yMax,yFmt,xFmt,step}
+    const W = 520, H = 200, L = 46, R = 12, Tp = 14, Bt = 28;
+    const pw = W - L - R, ph = H - Tp - Bt;
+    const xs = series.flatMap(s => s.points.map(p => p[0]));
+    const xMin = 0, xMax = Math.max(1, ...xs);
+    const yMin = opts.yMin, yMax = opts.yMax;
+    const X = x => L + (x - xMin) / (xMax - xMin) * pw;
+    const Y = y => Tp + ph - (y - yMin) / (yMax - yMin) * ph;
+    const ticksY = opts.ticksY || 4;
+    let g = '';
+    for (let i = 0; i <= ticksY; i++) {
+      const v = yMin + (yMax - yMin) * i / ticksY, y = Y(v);
+      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="${css('--grid')}" stroke-width="1"/>`;
+      g += `<text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${opts.yFmt(v)}</text>`;
+    }
+    const xt = 4;
+    for (let i = 0; i <= xt; i++) {
+      const v = xMin + (xMax - xMin) * i / xt, x = X(v);
+      g += `<text x="${x}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === xt ? 'end' : 'middle'}" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${fmtCompact(v)}</text>`;
+    }
+    let paths = '';
+    for (const s of series) {
+      if (!s.points.length) continue;
+      let d = '';
+      s.points.forEach((p, i) => {
+        const x = X(p[0]), y = Y(Math.min(yMax, Math.max(yMin, p[1])));
+        if (i === 0) d += `M${x} ${y}`;
+        else if (opts.step) d += `H${x}V${y}`;
+        else d += `L${x} ${y}`;
+      });
+      if (s.area) {
+        const first = s.points[0], lastP = s.points[s.points.length - 1];
+        paths += `<path d="${d}V${Y(yMin)}H${X(first[0])}Z" fill="${s.color}" fill-opacity="0.1"/>`;
+      }
+      paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const lastP = s.points[s.points.length - 1];
+      paths += `<circle cx="${X(lastP[0])}" cy="${Y(Math.min(yMax, Math.max(yMin, lastP[1])))}" r="4" fill="${s.color}" stroke="${css('--panel')}" stroke-width="2"/>`;
+    }
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${paths}<line id="xh" x1="0" x2="0" y1="${Tp}" y2="${Tp + ph}" stroke="${css('--faint')}" stroke-width="1" style="display:none"/><rect x="${L}" y="${Tp}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div>`;
+    const svg = el.querySelector('svg'), xh = el.querySelector('#xh'), tip = el.querySelector('.tip');
+    const pts = series[0] ? series[0].points : [];
+    svg.addEventListener('pointermove', e => {
+      if (!pts.length) return;
+      const r = svg.getBoundingClientRect();
+      const mx = (e.clientX - r.left) / r.width * W;
+      const xv = xMin + (mx - L) / pw * (xMax - xMin);
+      let best = 0;
+      for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i][0] - xv) < Math.abs(pts[best][0] - xv)) best = i;
+      const x = X(pts[best][0]);
+      xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.style.display = '';
+      tip.style.display = 'block';
+      tip.innerHTML = `<b>step</b> ${fmtCompact(pts[best][0])}<br>` + series.map(s => `<b>${s.name}</b> ${opts.yFmt(s.points[best][1])}`).join('<br>');
+      const cr = el.getBoundingClientRect();
+      const px = x / W * r.width;
+      tip.style.left = Math.min(px + 12, cr.width - tip.offsetWidth - 4) + 'px';
+      tip.style.top = (e.clientY - cr.top - 40) + 'px';
+    });
+    svg.addEventListener('pointerleave', () => { xh.style.display = 'none'; tip.style.display = 'none'; });
+  }
+
+  function depthChart(el, succ, lens) {
+    const W = 1040, H = 170, L = 40, R = 12, Tp = 14, Bt = 30;
+    const pw = W - L - R, ph = H - Tp - Bt, n = 11;
+    const slot = pw / n, bw = Math.min(24, slot * 0.5);
+    let g = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = i / 4, y = Tp + ph - v * ph;
+      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="${css('--grid')}"/>`;
+      g += `<text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${Math.round(v * 100)}%</text>`;
+    }
+    let bars = '';
+    for (let d = 0; d < n; d++) {
+      const v = succ ? succ[d] : 0, x = L + slot * d + (slot - bw) / 2, h = v * ph, y = Tp + ph - h;
+      const rr = Math.min(4, h);
+      bars += `<path d="M${x} ${Tp + ph}V${y + rr}Q${x} ${y} ${x + rr} ${y}H${x + bw - rr}Q${x + bw} ${y} ${x + bw} ${y + rr}V${Tp + ph}Z" fill="${css('--s1')}"><title>距离 ${d + 1}：解出率 ${pct(v)}${lens && lens[d] ? '，平均步数 ' + lens[d].toFixed(2) : ''}</title></path>`;
+      bars += `<text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" font-size="11" fill="${css('--muted')}" font-family="${css('--mono')}">${d + 1}</text>`;
+    }
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${bars}<text x="${W - R}" y="${H - 10}" text-anchor="end" font-size="10" fill="${css('--faint')}" font-family="${css('--body')}">距离 d</text></svg>`;
+  }
+
+  function tile(k, v, extra) { return `<div class="tile${extra && extra.hero ? ' hero' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${extra && extra.html ? extra.html : ''}</div>`; }
+
+  function render(data) {
+    const recs = data.records || [];
+    const cfg = data.config || {};
+    const r = recs[recs.length - 1];
+    $('cfg').textContent = Object.keys(cfg).length ? `envs ${cfg.envs} · α ${cfg.alpha} · γ ${cfg.gamma} · ε ${cfg.eps} · cap ${cfg.cap} · promote ${cfg.promote}` : '';
+    if (!r) {
+      $('tiles').innerHTML = `<div class="empty" style="grid-column:1/-1">还没有训练记录。启动训练并打开后台：<code>python play_rubik.py train --dashboard 8000</code>，然后访问 <code>http://localhost:8000/</code>。</div>`;
+      return;
+    }
+    const finished = r.K === 11 && r.success_random >= 0.999;
+    $('pill').className = 'pill ' + (source === 'live' ? (finished ? 'done' : 'live') : 'done');
+    $('pillText').textContent = source === 'live' ? (finished ? '训练完成 · 服务仍在线' : '实时训练中') : (source === 'embedded' ? '训练记录快照' : '离线记录');
+    const kp = Array.from({ length: 11 }, (_, i) => `<span class="pip${i < r.K ? ' on' : ''}"></span>`).join('');
+    $('tiles').innerHTML =
+      tile('环境步数', `${fmtCompact(r.step)}<small>${fmtInt(r.step)}</small>`, { hero: true }) +
+      tile('课程深度 K', `${r.K}<small>/ 11</small><span class="pips">${kp}</span>`) +
+      tile('随机状态解出率', `${pct(r.success_random)}`, { html: `<div class="meter"><i style="width:${100 * r.success_random}%"></i></div>` }) +
+      tile('Q 表覆盖率', `${pct(r.coverage)}<small>of 3.67M</small>`, { html: `<div class="meter"><i style="width:${100 * r.coverage}%"></i></div>` }) +
+      tile('价值误差', r.q_error === null ? '–' : `${r.q_error.toFixed(3)}<small>moves</small>`) +
+      tile('吞吐', `${fmtCompact(r.sps)}<small>env-steps / s</small>`) +
+      tile('已用时间', `${fmtTime(r.time)}<small>${fmtCompact(r.episodes)} episodes</small>`);
+    const P = key => recs.map(x => [x.step, x[key]]);
+    lineChart($('cSucc'), [{ name: 'success', color: css('--s1'), points: P('success_random'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
+    lineChart($('cK'), [{ name: 'K', color: css('--s2'), points: P('K') }], { yMin: 0, yMax: 11, yFmt: v => String(Math.round(v)), step: true, ticksY: 11 });
+    lineChart($('cCov'), [{ name: 'coverage', color: css('--s1'), points: P('coverage'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
+    const errs = recs.filter(x => x.q_error !== null).map(x => [x.step, x.q_error]);
+    const eMax = Math.max(0.5, ...errs.map(p => p[1]));
+    lineChart($('cErr'), [{ name: '|Q+d|', color: css('--s3'), points: errs }], { yMin: 0, yMax: Math.ceil(eMax * 2) / 2, yFmt: v => v.toFixed(1) });
+    depthChart($('depthChart'), r.success_by_depth, r.mean_len_by_depth);
+    let rows = '<tr><th>距离 d</th><th>状态数</th><th>解出率</th><th class="bar"></th><th>平均步数</th><th>最优</th></tr>';
+    for (let d = 1; d <= 11; d++) {
+      const s = r.success_by_depth[d - 1], ml = r.mean_len_by_depth[d - 1];
+      rows += `<tr><td>${d}</td><td>${fmtInt(DEPTH_COUNT[d])}</td><td>${pct(s)}</td><td class="bar"><div class="track"><i style="width:${100 * s}%"></i></div></td><td>${ml === null ? '–' : ml.toFixed(2)}</td><td>${d}</td></tr>`;
+    }
+    $('depthTable').innerHTML = rows;
+    $('note').textContent = `最新记录：step ${fmtInt(r.step)}，${fmtInt(r.solved)} 个回合以复原结束。价值误差是在 20 万个随机状态里已访问过的那部分上计算的，收敛时应趋近 0。`;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch('metrics', { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      source = 'live'; failures = 0; last = data; render(data);
+    } catch (e) {
+      failures++;
+      if (!last && window.EMBEDDED_METRICS) { source = 'embedded'; last = window.EMBEDDED_METRICS; render(last); }
+      else if (!last) render({});
+      else if (source === 'live' && failures > 3) { source = 'offline'; render(last); }
+    }
+  }
+  poll();
+  setInterval(poll, 2000);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => last && render(last));
+})();
+</script>
+</body>
+</html>
