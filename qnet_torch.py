@@ -267,6 +267,20 @@ class TorchNetTrainer:
                 out[lo:hi] = self._q(idx).argmax(1).cpu().numpy()
         return out
 
+    def load(self, net_path):
+        """Load weights saved by ``save`` (numpy MLP format); the sizes must match ``--layers``."""
+        z = np.load(net_path)
+        sizes = z['sizes'].tolist()
+        if sizes != [N_IN] + self.layers + [9]:
+            raise SystemExit('saved network is %s but --layers gives %s' % ('-'.join(map(str, sizes)), '-'.join(map(str, [N_IN] + self.layers + [9]))))
+        lin = [m for m in self.net if isinstance(m, nn.Linear)]
+        n = len(lin)
+        with torch.no_grad():
+            for i, m in enumerate(lin):
+                m.weight.copy_(torch.from_numpy(z['arr_%d' % i].T.copy()))
+                m.bias.copy_(torch.from_numpy(z['arr_%d' % (n + i)]))
+        self.target.load_state_dict(self.net.state_dict())
+
     def save(self, net_path, policy_path):
         # numpy MLP format: W_i (in, out), b_i, sizes  -> serve / eval / solve without torch
         lin = [m for m in self.net if isinstance(m, nn.Linear)]

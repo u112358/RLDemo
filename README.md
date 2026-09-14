@@ -93,7 +93,13 @@ is needed). The point of the comparison:
 pip install torch                                              # Apple Silicon: the default wheel has MPS support
 python play_rubik.py train --agent net --backend torch --dashboard 8000 --minutes 20
 python play_rubik.py serve --agent net                         # afterwards, pages + the network's policy (no torch needed)
+python play_rubik.py train --agent net --backend torch --resume --minutes 30   # continue from cache/net.npz
 ```
+
+`--resume` reloads the saved weights, the curriculum depth and the metrics
+history, so a run can be extended without starting over (`--layers` must
+match the saved network). On CUDA, TF32 is on by default and `--amp` adds
+bf16 autocast for the forward passes.
 
 `qnet_torch.py` is the same learner on PyTorch: the one-hot features of all
 3,674,160 states (529 MB) and the transition table live on the device, the

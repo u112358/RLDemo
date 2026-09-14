@@ -479,12 +479,28 @@ def train(args):
         tr = Trainer(n_envs=args.envs, alpha=args.alpha, gamma=args.gamma, eps=args.eps,
                      promote=args.promote, episode_cap=args.cap, eval_every=args.eval_every, seed=args.seed)
         print('transition table + BFS ready, %d states, %d parallel environments' % (rb.N_STATES, args.envs))
+    if args.resume:
+        if args.agent != 'net' or not os.path.exists(NET_PATH):
+            raise SystemExit('--resume needs a saved network agent (cache/net.npz)')
+        tr.load(NET_PATH)
+        if os.path.exists(NET_METRICS_PATH):
+            with open(NET_METRICS_PATH) as f:
+                old = json.load(f).get('records', [])
+            if old:
+                tr.K = max(tr.K, min(old[-1]['K'], tr_max_k(tr)))
+                offset_step, offset_time = old[-1]['step'], old[-1]['time']
+                tr.metrics = old
+                tr.steps = offset_step
+                tr.updates = old[-1].get('updates', 0)
+                tr.t0 -= offset_time                 # elapsed time, steps and updates continue from the saved run
+        print('resumed from %s: K=%d, %d earlier evaluations' % (NET_PATH, tr.K, len(tr.metrics)))
     if args.dashboard:
         serve(args.dashboard, Serving(tr, args.agent))
     progress = Progress(args, tr, plain=args.plain or not enable_ansi())
+    run_start = time.time()                  # --minutes counts this process only, also after --resume
     i = 0
     try:
-        while tr.steps < args.steps and not (args.minutes and time.time() - tr.t0 > 60 * args.minutes):
+        while tr.steps < args.steps and not (args.minutes and time.time() - run_start > 60 * args.minutes):
             tr.step()
             i += 1
             if i % args.eval_every == 0:
@@ -643,6 +659,7 @@ def main():
     t.add_argument('--device', default='auto', help='torch: auto | mps | cuda | cpu')
     t.add_argument('--layers', default='1024,1024,512', help='torch: hidden layer widths')
     t.add_argument('--replay', action='store_true', help='torch: model-free replay Q-learning instead of all-actions targets')
+    t.add_argument('--resume', action='store_true', help='net: continue from cache/net.npz (weights, curriculum depth, metrics history)')
     t.add_argument('--plain', action='store_true', help='plain one-line-per-evaluation log instead of the progress bar')
     t.add_argument('--amp', action='store_true', help='torch: bf16 autocast for the forward passes (CUDA), ~2x faster')
     t.add_argument('--weight-by-depth', action='store_true', help='net: weight the loss by 1/scramble depth (DeepCube)')

@@ -268,6 +268,13 @@ class NetTrainer:
             self.K += 1
         return rec
 
+    def load(self, net_path):
+        saved = MLP.from_file(net_path)
+        if [w.shape for w in saved.W] != [w.shape for w in self.net.W]:
+            raise SystemExit('saved network has a different size than --hidden')
+        self.net.load(saved.W + saved.b)
+        self.target.load(self.net.params())
+
     def full_policy(self, chunk=100000):
         """Greedy action of the network for every state (used for policy.bin)."""
         out = np.empty(rb.N_STATES, dtype=np.uint8)
