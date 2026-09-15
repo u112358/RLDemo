@@ -5,142 +5,173 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cube Q-learning Monitor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
+  /* dark-first: telemetry console.  Metric hues are shared with the CLI panel:
+     solve = cyan, curriculum = amber, sampled = violet, generalisation = green, error = rose. */
   :root {
-    color-scheme: light dark;
-    --ground: #EDEFF3; --panel: #FFFFFF; --panel-2: #F5F6F9;
-    --ink: #171A21; --muted: #5F6778; --faint: #8A92A3;
-    --line: #D5D9E2; --grid: #E6E9EF;
-    --good: #0ca30c; --good-bg: #DDF3E5; --warn: #B4531B; --warn-bg: #FBE9DC;
-    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
-    --stage: radial-gradient(120% 90% at 50% 40%, #FAFBFD 0%, #E4E7EE 100%);
-    --display: "Bricolage Grotesque", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    color-scheme: dark;
+    --ground: #0A0D14; --panel: #10141D; --panel-2: #161C28; --panel-3: #1C2433;
+    --ink: #E8ECF4; --muted: #8C97AC; --faint: #5C6678;
+    --line: #232B3B; --grid: #1A2130; --grid-strong: #2A3345;
+    --cyan: #22D3EE; --amber: #F5B342; --violet: #A78BFA; --green: #34D399; --rose: #FB7185;
+    --good: #34D399; --warn: #F5B342; --bad: #FB7185;
+    --glow: rgba(34, 211, 238, 0.35);
+    --stage: radial-gradient(120% 90% at 50% 40%, #1A2233 0%, #0B0F17 100%);
+    --display: "Chakra Petch", "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
     --body: "IBM Plex Sans", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
-    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --ground: #101216; --panel: #181B21; --panel-2: #1F232B;
-      --ink: #E9EBF0; --muted: #9AA1B0; --faint: #6E7686;
-      --line: #2A2F3A; --grid: #242932;
-      --good: #4CC97E; --good-bg: #17331F; --warn: #F0A06A; --warn-bg: #3A2416;
-      --s1: #3987e5; --s2: #d95926; --s3: #199e70;
-      --stage: radial-gradient(120% 90% at 50% 40%, #232833 0%, #121419 100%);
-    }
-  }
-  :root[data-theme="dark"] {
-    --ground: #101216; --panel: #181B21; --panel-2: #1F232B;
-    --ink: #E9EBF0; --muted: #9AA1B0; --faint: #6E7686;
-    --line: #2A2F3A; --grid: #242932;
-    --good: #4CC97E; --good-bg: #17331F; --warn: #F0A06A; --warn-bg: #3A2416;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
-    --stage: radial-gradient(120% 90% at 50% 40%, #232833 0%, #121419 100%);
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ground: #EEF1F6; --panel: #FFFFFF; --panel-2: #F4F6FA; --panel-3: #E9EDF4;
+    --ink: #131722; --muted: #5B6577; --faint: #8A93A5;
+    --line: #D6DCE7; --grid: #E7EBF2; --grid-strong: #CDD4E0;
+    --cyan: #0891B2; --amber: #B7791F; --violet: #7C3AED; --green: #059669; --rose: #E11D48;
+    --good: #059669; --warn: #B7791F; --bad: #E11D48;
+    --glow: rgba(8, 145, 178, 0.25);
+    --stage: radial-gradient(120% 90% at 50% 40%, #FAFBFD 0%, #E1E6EE 100%);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; padding-block: 20px 32px; padding-inline: 20px; }
-  .app { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+  html { background: var(--ground); }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; padding-block: 18px 40px; padding-inline: 20px;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 32px 32px; background-position: -1px -1px; }
+  .app { max-width: 1240px; margin: 0 auto; display: grid; gap: 14px; }
+
   header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
-  h1 { font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-  .sub { color: var(--muted); margin: 4px 0 0; }
+  .eyebrow { font: 600 11px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan); }
+  h1 { font-family: var(--display); font-weight: 700; font-size: 28px; line-height: 1.1; margin: 2px 0 0; letter-spacing: 0.01em; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 6px 0 0; max-width: 72ch; }
   .status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font: 600 12px var(--mono); padding: 5px 12px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
   .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-  .pill.live .dot { background: var(--good); box-shadow: 0 0 0 3px var(--good-bg); }
-  .pill.done .dot { background: var(--s1); }
-  .cfg { font: 12px var(--mono); color: var(--muted); }
+  .pill.live { color: var(--good); border-color: var(--good); }
+  .pill.live .dot { background: var(--good); box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2); animation: pulse 1.6s ease-in-out infinite; }
+  .pill.done { color: var(--cyan); border-color: var(--cyan); }
+  .pill.done .dot { background: var(--cyan); }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2); } 50% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0.05); } }
+  .iconbtn { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 999px; width: 34px; height: 30px; cursor: pointer; font-size: 14px; display: grid; place-items: center; }
+  .iconbtn:hover, .btn:hover, .seg button:hover:not(.on):not(:disabled) { border-color: var(--cyan); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font: 12px var(--mono); padding: 3px 9px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+  .chip b { color: var(--ink); font-weight: 500; }
+  .chip.accent { border-color: var(--cyan); color: var(--cyan); }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 12px; min-width: 0; }
-  .tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
-  .tile .v { font-weight: 600; font-size: 26px; line-height: 1.2; font-variant-numeric: tabular-nums; margin-top: 2px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-  .tile .v small { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 12px; min-width: 0; display: grid; gap: 4px; position: relative; overflow: hidden; }
+  .tile::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--hue, var(--line)); }
+  .tile .k { font: 600 11px var(--mono); letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 70px; }
+  .tile .v { font-family: var(--display); font-weight: 700; font-size: 27px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; color: var(--ink); }
+  .tile .v small { font: 500 11px var(--mono); color: var(--muted); }
   .tile.hero .v { font-size: 34px; }
-  .pips { display: inline-flex; gap: 3px; }
-  .pip { width: 8px; height: 12px; border-radius: 2px; background: var(--grid); }
-  .pip.on { background: var(--s1); }
-  .meter { height: 6px; border-radius: 3px; background: var(--grid); margin-top: 8px; overflow: hidden; }
-  .meter i { display: block; height: 100%; background: var(--s1); border-radius: 3px; }
+  .tile .d { font-size: 12px; color: var(--muted); line-height: 1.35; }
+  .tile .spark { position: absolute; right: 12px; top: 12px; width: 64px; height: 26px; opacity: 0.9; }
+  .tile .spark svg { width: 100%; height: 100%; display: block; }
+  .pips { display: inline-flex; gap: 3px; align-self: center; }
+  .pip { width: 7px; height: 14px; border-radius: 2px; background: var(--panel-3); }
+  .pip.on { background: var(--amber); box-shadow: 0 0 6px rgba(245, 179, 66, 0.45); }
+  .meter { height: 5px; border-radius: 3px; background: var(--panel-3); overflow: hidden; margin-top: 2px; }
+  .meter i { display: block; height: 100%; background: var(--hue, var(--cyan)); border-radius: 3px; }
 
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 10px; min-width: 0; position: relative; }
+  .card h2 { font-family: var(--display); font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
+  .card .desc { font-size: 12px; color: var(--muted); margin: 2px 0 6px; line-height: 1.4; }
+  .card .head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+  .card .head > div:first-child { flex: 1 1 200px; min-width: 0; }
+  .card .head .ctl { flex: none; display: flex; align-items: center; gap: 6px; padding-top: 2px; }
+  @media (max-width: 560px) { .card .head { flex-wrap: wrap; } }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 0 2px; }
+  .toolbar .lbl { font: 600 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
   .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 820px) { .charts { grid-template-columns: minmax(0, 1fr); } }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 8px; min-width: 0; position: relative; }
-  .card h2 { font-family: var(--display); font-size: 14px; font-weight: 700; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .card h2 span { font-family: var(--body); font-weight: 400; font-size: 12px; color: var(--muted); text-align: right; }
+  @media (max-width: 860px) { .charts { grid-template-columns: minmax(0, 1fr); } }
   .card.wide { grid-column: 1 / -1; }
   .card svg { display: block; width: 100%; height: auto; max-width: 100%; }
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 4px 0 2px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted); margin: 4px 0 0; }
   .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
-  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: 12px var(--mono); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,0.12); white-space: nowrap; display: none; z-index: 2; }
+  .legend i.dash { height: 0; border-top: 2px dashed var(--amber); background: none; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel-3); border: 1px solid var(--grid-strong); border-radius: 6px; padding: 6px 9px; font: 12px var(--mono); color: var(--ink); box-shadow: 0 6px 18px rgba(0,0,0,0.35); white-space: nowrap; display: none; z-index: 2; line-height: 1.45; }
   .tip b { color: var(--muted); font-weight: 500; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { border: 0; background: var(--panel-2); color: var(--muted); padding: 4px 10px; font: 500 12px var(--mono); cursor: pointer; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--cyan); color: var(--ground); }
+  .seg button:disabled { opacity: 0.45; cursor: default; }
+  .seg.big button { padding: 6px 12px; font: 500 13px var(--body); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: 500 13px var(--body); cursor: pointer; }
+  select { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 5px 8px; font: 13px var(--body); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
   .cubecard { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
-  @media (max-width: 820px) { .cubecard { grid-template-columns: minmax(0, 1fr); } }
-  .cubestage { position: relative; background: var(--stage, var(--panel-2)); border: 1px solid var(--line); border-radius: 10px; aspect-ratio: 1 / 0.9; max-width: 100%; overflow: hidden; }
+  @media (max-width: 860px) { .cubecard { grid-template-columns: minmax(0, 1fr); } }
+  .cubestage { position: relative; background: var(--stage); border: 1px solid var(--line); border-radius: 10px; aspect-ratio: 1 / 0.9; max-width: 100%; overflow: hidden; }
   .cubestage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   .cubestage .nolib { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: var(--muted); font-size: 12px; }
   .cubeinfo { display: grid; gap: 10px; min-width: 0; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .seg button { border: 0; background: var(--panel-2); color: var(--muted); padding: 6px 12px; font: 500 13px var(--body); cursor: pointer; }
-  .seg button.on { background: var(--ink); color: var(--panel); }
-  .seg button:disabled { opacity: 0.45; cursor: default; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .btn { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: 500 13px var(--body); cursor: pointer; }
-  .btn:hover { filter: brightness(0.97); }
-  select { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 5px 8px; font: 13px var(--body); }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; }
   .kv b { color: var(--muted); font-weight: 500; white-space: nowrap; }
   .kv .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
-  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); margin-right: 4px; }
-  .tag.explore { color: var(--warn); border-color: var(--warn); }
-  .tag.unknown { color: var(--s2); border-color: var(--s2); }
-  .tag.greedy { color: var(--s1); border-color: var(--s1); }
+  .tag { display: inline-block; font: 600 11px var(--mono); padding: 1px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); margin-right: 4px; }
+  .tag.explore { color: var(--amber); border-color: var(--amber); }
+  .tag.unknown { color: var(--rose); border-color: var(--rose); }
+  .tag.greedy { color: var(--cyan); border-color: var(--cyan); }
   .tag.done { color: var(--good); border-color: var(--good); }
   .speed { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  .speed input { width: 110px; accent-color: var(--ink); }
+  .speed input { width: 110px; accent-color: var(--cyan); }
   .qbars { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; align-items: end; height: 84px; }
   .qbar { display: grid; grid-template-rows: 1fr auto; height: 100%; text-align: center; font: 10px var(--mono); color: var(--muted); }
-  .qbar .col { align-self: end; background: var(--grid); border-radius: 3px 3px 0 0; position: relative; }
-  .qbar .col i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--s1); border-radius: 3px 3px 0 0; }
-  .qbar.pick .col i { background: var(--s2); }
+  .qbar .col { align-self: end; background: var(--panel-3); border-radius: 3px 3px 0 0; position: relative; }
+  .qbar .col i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--cyan); border-radius: 3px 3px 0 0; }
+  .qbar.pick .col i { background: var(--amber); }
   .qbar .v { font-size: 9px; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
-  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+  th { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
   th:first-child, td:first-child { text-align: left; }
-  td.bar { width: 40%; }
-  td.bar .track { height: 8px; background: var(--grid); border-radius: 2px 4px 4px 2px; position: relative; }
-  td.bar .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--s1); border-radius: 0 4px 4px 0; }
-  .tablewrap { overflow-x: auto; }
+  td { font-family: var(--mono); font-size: 12px; }
+  td.bar { width: 34%; }
+  td.bar .track { height: 8px; background: var(--panel-3); border-radius: 2px 4px 4px 2px; position: relative; }
+  td.bar .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--cyan); border-radius: 0 4px 4px 0; }
+  tr.cur td { background: rgba(245, 179, 66, 0.08); }
+  .tablewrap { overflow-x: auto; margin-top: 8px; }
   .empty { padding: 24px; text-align: center; color: var(--muted); }
-  .empty code { font: 12px var(--mono); background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }
-  .note { font-size: 12px; color: var(--muted); }
-  @media (prefers-reduced-motion: reduce) { .pill.live .dot { box-shadow: none; } }
+  .empty code, .help code { font: 12px var(--mono); background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }
+  .note { font-size: 12px; color: var(--muted); margin: 0; }
+  .help summary { cursor: pointer; font-family: var(--display); font-weight: 600; font-size: 15px; }
+  .help dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 10px 0 0; font-size: 13px; }
+  .help dt { font: 600 12px var(--mono); color: var(--ink); white-space: nowrap; }
+  .help dt i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; vertical-align: 0; }
+  .help dd { margin: 0; color: var(--muted); }
+  @media (max-width: 560px) { .help dl { grid-template-columns: 1fr; gap: 2px; } .help dd { margin-bottom: 8px; } }
+  @media (prefers-reduced-motion: reduce) { .pill.live .dot { animation: none; } }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div>
+      <div class="eyebrow">Pocket cube · 3,674,160 states · God's number 11</div>
       <h1>Cube Q-learning Monitor</h1>
-      <p class="sub">表格式 Q-learning 覆盖二阶魔方全部 3,674,160 个状态的训练过程。反向打乱课程，每步奖励 −1，Q 值应收敛到「离复原的距离」的相反数。</p>
+      <p class="sub" id="subtitle">二阶魔方 Q-learning 训练遥测。反向打乱课程，每走一步奖励 −1，学到的 Q 值应等于「离复原还差几步」的相反数。</p>
     </div>
     <div class="status">
       <span class="pill" id="pill"><span class="dot"></span><span id="pillText">等待数据</span></span>
-      <span class="cfg" id="cfg"></span>
+      <button type="button" class="iconbtn" id="themeBtn" title="切换深色 / 浅色">☾</button>
     </div>
   </header>
+  <div class="chips" id="cfg"></div>
 
   <div class="tiles" id="tiles"></div>
 
   <div class="card wide">
-    <h2>模拟魔方 <span id="cubeSub">训练过程中的魔方长什么样</span></h2>
+    <div class="head"><div><h2>模拟魔方 <span class="chip" id="cubeSub">快照</span></h2><p class="desc">训练器驱动的是编码后的状态索引，这里把它画回真实魔方：看它到底在转什么。</p></div></div>
     <div class="cubecard">
       <div class="cubestage"><canvas id="cubeCanvas"></canvas></div>
       <div class="cubeinfo">
         <div class="row">
-          <div class="seg"><button type="button" id="modeTrace">训练环境 #0 实况</button><button type="button" id="modeSpec" class="on">旁观者：用当前 Q 表求解</button></div>
+          <div class="seg big"><button type="button" id="modeTrace">训练环境 #0 实况</button><button type="button" id="modeSpec" class="on">旁观者：用当前策略求解</button></div>
           <select id="specDepth" title="旁观者的打乱步数"><option value="K">打乱 = 当前课程深度 K</option><option value="3">打乱 3 步</option><option value="6">打乱 6 步</option><option value="9">打乱 9 步</option><option value="11">打乱 11 步</option><option value="20">打乱 20 步</option></select>
           <button type="button" class="btn" id="specReset">重新打乱</button>
           <button type="button" class="btn" id="specPause">暂停</button>
@@ -152,17 +183,17 @@
       </div>
     </div>
   </div>
-  <div class="charts">
-    <div class="card"><h2>随机状态一次解出率 <span>贪心策略，按状态分布加权</span></h2><div id="cSucc"></div></div>
-    <div class="card"><h2>课程深度 K <span>训练起点 = 复原态打乱 1…K 步</span></h2><div id="cK"></div></div>
-    <div class="card"><h2 id="covTitle">Q 表覆盖率 <span>至少更新过一次的状态比例</span></h2><div id="cCov"></div></div>
-    <div class="card"><h2>价值误差 <span>已访问状态上的 mean |Q + BFS 距离|</span></h2><div id="cErr"></div></div>
-    <div class="card wide">
-      <h2>按距离分解 <span>每个距离抽 400 个精确距离为 d 的状态，贪心走 30 步</span></h2>
-      <div id="depthChart"></div>
-      <div class="tablewrap"><table id="depthTable"></table></div>
-    </div>
+
+  <div class="toolbar">
+    <span class="lbl">Training curves</span>
+    <div class="row"><span class="lbl">横轴</span><div class="seg" id="xAxis"><button type="button" data-x="step" class="on">环境步数</button><button type="button" data-x="time">训练时间</button></div></div>
   </div>
+  <div class="charts" id="charts"></div>
+
+  <details class="help card wide" id="help">
+    <summary>指标说明：每个数字是怎么算出来的</summary>
+    <dl id="helpList"></dl>
+  </details>
   <p class="note" id="note"></p>
 </div>
 
@@ -172,57 +203,116 @@
 <script>
 (function () {
   const $ = id => document.getElementById(id);
+  const N_STATES = 3674160;
   const DEPTH_COUNT = [1, 9, 54, 321, 1847, 9992, 50136, 227536, 870072, 1887748, 623800, 2644];
   const fmtInt = n => n.toLocaleString('en-US');
-  const fmtCompact = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'K' : String(n);
-  const pct = x => (100 * x).toFixed(x >= 0.999 && x < 1 ? 2 : 1) + '%';
-  const fmtTime = s => s >= 3600 ? (s / 3600).toFixed(1) + ' h' : s >= 60 ? Math.floor(s / 60) + ' m ' + Math.round(s % 60) + ' s' : s.toFixed(0) + ' s';
+  const fmtCompact = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + 'K' : String(Math.round(n));
+  const pct = x => (100 * x).toFixed(x >= 0.999 && x < 1 ? 2 : x < 0.01 ? 2 : 1) + '%';
+  const fmtTime = s => s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor(s % 3600 / 60) + 'm' : s >= 60 ? Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's' : s.toFixed(0) + 's';
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+  // ---------- theme ----------
+  const applyTheme = t => { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); $('themeBtn').textContent = (document.documentElement.getAttribute('data-theme') === 'light') ? '☀' : '☾'; };
+  applyTheme(store.get('theme'));
+  $('themeBtn').addEventListener('click', () => { const t = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'; store.set('theme', t); applyTheme(t); if (last) render(last); });
+
+  // ---------- metric definitions (same wording as the CLI panel) ----------
+  const HELP = [
+    ['step', '--ink', '环境步数', '训练器累计转动魔方的次数（所有并行环境加起来）。横轴默认用它。'],
+    ['K', '--amber', '课程深度 K', '反向打乱课程：每个回合从复原态随机打乱 1…K 步作为起点。当前深度 K 的解出率 ≥ 升级门槛（promote）时 K+1，直到 11（God\'s number）。'],
+    ['solve', '--cyan', '随机状态解出率', '按 3,674,160 个状态的真实距离分布加权：每个距离 d 抽 400 个离复原正好 d 步的状态，贪心策略（每步选 Q 值最大的动作）30 步内复原的比例，再按各距离的状态数占比加权求和。它就是「随手打乱一个魔方，这个策略能解出来的概率」。'],
+    ['cov', '--violet', 'Q 表覆盖率 / 已采样状态', 'Q 表智能体：在 20 万个随机状态里，最优动作的 Q 值已经被更新过（不再是初始值）的比例。网络智能体：训练里被采样进过更新的状态占全部状态的比例。'],
+    ['unseen', '--green', '未见过状态解出率（泛化）', '只有网络智能体有。在随机抽的状态里挑出训练中从未采样过的那些（最多 2000 个），贪心 30 步内复原的比例。这是网络「没背过也会做」的部分。'],
+    ['err', '--rose', '价值误差 |Q+d|', 'Q 值本应等于「离复原还差几步」的相反数。这里取 max_a Q(s,a) 与真实 BFS 距离 d(s) 之和的绝对值，在随机状态上求平均（Q 表只算已学过的状态），0 = 完美。'],
+    ['loss', '--rose', '训练损失', '只有网络智能体有。最近 200 次梯度更新的 TD 误差均方（预测的 Q 与目标 −1 + max Q(s′) 的差）。'],
+    ['thr', '--ink', '吞吐', 'upd/s = 每秒梯度更新次数（网络）；steps/s = 每秒环境转动次数。'],
+  ];
+  $('helpList').innerHTML = HELP.map(h => `<dt><i style="background:var(${h[1]})"></i>${h[2]}</dt><dd>${h[3]}</dd>`).join('');
 
   let last = null, source = 'none', failures = 0;
+  const modes = JSON.parse(store.get('chartModes') || '{}');   // per chart y-axis mode
+  let xKey = store.get('xAxis') === 'time' ? 'time' : 'step';
+  $('xAxis').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.x === xKey); b.addEventListener('click', () => { xKey = b.dataset.x; store.set('xAxis', xKey); $('xAxis').querySelectorAll('button').forEach(c => c.classList.toggle('on', c === b)); if (last) render(last); }); });
+  const fmtX = v => xKey === 'time' ? fmtTime(v) : fmtCompact(v);
 
-  // ---------- line chart (inline SVG, hover crosshair) ----------
+  // ---------- axis helpers ----------
+  function niceStep(span, n) {
+    const raw = span / Math.max(1, n), p = Math.pow(10, Math.floor(Math.log10(raw)));
+    for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= raw) return m * p;
+    return 10 * p;
+  }
+  function autoRange(vals, n) {
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (!isFinite(lo) || !isFinite(hi)) return { lo: 0, hi: 1, step: 0.25 };
+    if (hi - lo < 1e-9) { hi = lo + (Math.abs(lo) || 1) * 0.1; lo = lo - (Math.abs(lo) || 1) * 0.1; }
+    if (lo >= 0 && lo < 0.4 * hi) lo = 0;                       // small positive floors read better from zero
+    const step = niceStep(hi - lo, n);
+    return { lo: Math.floor(lo / step) * step, hi: Math.ceil(hi / step + 1e-9) * step, step };
+  }
+
+  // ---------- line chart: inline SVG, auto / fixed / log y-axis, K-promotion markers, hover tooltip ----------
   function lineChart(el, series, opts) {
-    // series: [{name, color, points:[[x,y]]}], opts: {yMin,yMax,yFmt,xFmt,step}
-    const W = 520, H = 200, L = 46, R = 12, Tp = 14, Bt = 28;
+    // series: [{name, color, points:[[x, y, rec]]}]  opts: {mode, fixed:[lo,hi], fmt, step, markers, xTitle, yTitle}
+    const W = 560, H = 210, L = 52, R = 14, Tp = 16, Bt = 30;
     const pw = W - L - R, ph = H - Tp - Bt;
-    const xs = series.flatMap(s => s.points.map(p => p[0]));
+    const all = series.flatMap(s => s.points);
+    const xs = all.map(p => p[0]);
     const xMin = 0, xMax = Math.max(1, ...xs);
-    const yMin = opts.yMin, yMax = opts.yMax;
-    const X = x => L + (x - xMin) / (xMax - xMin) * pw;
-    const Y = y => Tp + ph - (y - yMin) / (yMax - yMin) * ph;
-    const ticksY = opts.ticksY || 4;
-    let g = '';
-    for (let i = 0; i <= ticksY; i++) {
-      const v = yMin + (yMax - yMin) * i / ticksY, y = Y(v);
-      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="${css('--grid')}" stroke-width="1"/>`;
-      g += `<text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${opts.yFmt(v)}</text>`;
+    const mode = opts.mode || 'auto';
+    const ys = all.map(p => p[1]).filter(v => v !== null && isFinite(v) && (mode !== 'log' || v > 0));
+    let yMin, yMax, ticks = [];
+    if (mode === 'fixed') { yMin = opts.fixed[0]; yMax = opts.fixed[1]; const n = opts.fixedTicks || 4; for (let i = 0; i <= n; i++) ticks.push(yMin + (yMax - yMin) * i / n); }
+    else if (mode === 'log') {
+      const lo = Math.min(...ys), hi = Math.max(...ys);
+      yMin = Math.floor(Math.log10(isFinite(lo) ? lo : 0.001)); yMax = Math.ceil(Math.log10(isFinite(hi) ? hi : 1) + 1e-9);
+      if (yMax <= yMin) yMax = yMin + 1;
+      for (let e = yMin; e <= yMax; e++) ticks.push(e);
+    } else {
+      const r = autoRange(ys.length ? ys : [0, 1], 4); yMin = r.lo; yMax = r.hi;
+      for (let v = yMin; v <= yMax + r.step / 2; v += r.step) ticks.push(v);
     }
-    const xt = 4;
+    const ty = v => mode === 'log' ? Math.log10(Math.max(v, 1e-12)) : v;
+    const X = x => L + (x - xMin) / (xMax - xMin) * pw;
+    const Y = y => Tp + ph - (Math.min(yMax, Math.max(yMin, ty(y))) - yMin) / (yMax - yMin) * ph;
+    const tickLabel = v => mode === 'log' ? opts.fmt(Math.pow(10, v)) : opts.fmt(v);
+    let g = '';
+    for (const v of ticks) {
+      const y = mode === 'log' ? Tp + ph - (v - yMin) / (yMax - yMin) * ph : Y(v);
+      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="${css('--grid-strong')}" stroke-width="1" stroke-dasharray="${v === ticks[0] ? '' : '2 4'}"/>`;
+      g += `<text x="${L - 7}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${tickLabel(v)}</text>`;
+    }
+    const xt = 5;
     for (let i = 0; i <= xt; i++) {
       const v = xMin + (xMax - xMin) * i / xt, x = X(v);
-      g += `<text x="${x}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === xt ? 'end' : 'middle'}" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${fmtCompact(v)}</text>`;
+      g += `<text x="${x}" y="${H - 9}" text-anchor="${i === 0 ? 'start' : i === xt ? 'end' : 'middle'}" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${fmtX(v)}</text>`;
+    }
+    g += `<text x="${L}" y="${Tp - 5}" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">${opts.yTitle || ''}${mode === 'log' ? ' · log' : ''}</text>`;
+    g += `<text x="${W - R}" y="${Tp - 5}" text-anchor="end" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">${xKey === 'time' ? '训练时间 →' : '环境步数 →'}</text>`;
+    // curriculum promotions
+    let mk = '', lastLabelX = -1e9;
+    if (opts.markers) for (const m of opts.markers) {
+      const x = X(m.x);
+      mk += `<line x1="${x}" x2="${x}" y1="${Tp}" y2="${Tp + ph}" stroke="${css('--amber')}" stroke-opacity="0.45" stroke-width="1" stroke-dasharray="3 3"/>`;
+      if (opts.markerLabels && x - lastLabelX >= 20) { mk += `<text x="${x + 2}" y="${Tp + 9}" font-size="9" fill="${css('--amber')}" font-family="${css('--mono')}">K${m.K}</text>`; lastLabelX = x; }
     }
     let paths = '';
     for (const s of series) {
-      if (!s.points.length) continue;
+      const pts = s.points.filter(p => p[1] !== null && isFinite(p[1]) && (mode !== 'log' || p[1] > 0));
+      if (!pts.length) continue;
       let d = '';
-      s.points.forEach((p, i) => {
-        const x = X(p[0]), y = Y(Math.min(yMax, Math.max(yMin, p[1])));
-        if (i === 0) d += `M${x} ${y}`;
-        else if (opts.step) d += `H${x}V${y}`;
-        else d += `L${x} ${y}`;
+      pts.forEach((p, i) => {
+        const x = X(p[0]), y = Y(p[1]);
+        if (i === 0) d += `M${x} ${y}`; else if (opts.step) d += `H${x}V${y}`; else d += `L${x} ${y}`;
       });
-      if (s.area) {
-        const first = s.points[0], lastP = s.points[s.points.length - 1];
-        paths += `<path d="${d}V${Y(yMin)}H${X(first[0])}Z" fill="${s.color}" fill-opacity="0.1"/>`;
-      }
+      if (s.area) paths += `<path d="${d}V${Tp + ph}H${X(pts[0][0])}Z" fill="${s.color}" fill-opacity="0.12"/>`;
       paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-      const lastP = s.points[s.points.length - 1];
-      paths += `<circle cx="${X(lastP[0])}" cy="${Y(Math.min(yMax, Math.max(yMin, lastP[1])))}" r="4" fill="${s.color}" stroke="${css('--panel')}" stroke-width="2"/>`;
+      const lp = pts[pts.length - 1];
+      paths += `<circle cx="${X(lp[0])}" cy="${Y(lp[1])}" r="4.5" fill="${s.color}" stroke="${css('--panel')}" stroke-width="2"/>`;
+      if (s.threshold !== undefined && s.threshold >= yMin && s.threshold <= yMax) paths += `<line x1="${L}" x2="${W - R}" y1="${Y(s.threshold)}" y2="${Y(s.threshold)}" stroke="${css('--good')}" stroke-width="1" stroke-dasharray="4 3" stroke-opacity="0.7"/>`;
     }
-    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${paths}<line id="xh" x1="0" x2="0" y1="${Tp}" y2="${Tp + ph}" stroke="${css('--faint')}" stroke-width="1" style="display:none"/><rect x="${L}" y="${Tp}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div>`;
-    const svg = el.querySelector('svg'), xh = el.querySelector('#xh'), tip = el.querySelector('.tip');
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${mk}${paths}<line class="xh" x1="0" x2="0" y1="${Tp}" y2="${Tp + ph}" stroke="${css('--faint')}" stroke-width="1" style="display:none"/><rect x="${L}" y="${Tp}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div>`;
+    const svg = el.querySelector('svg'), xh = el.querySelector('.xh'), tip = el.querySelector('.tip');
     const pts = series[0] ? series[0].points : [];
     svg.addEventListener('pointermove', e => {
       if (!pts.length) return;
@@ -231,91 +321,202 @@
       const xv = xMin + (mx - L) / pw * (xMax - xMin);
       let best = 0;
       for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i][0] - xv) < Math.abs(pts[best][0] - xv)) best = i;
-      const x = X(pts[best][0]);
+      const x = X(pts[best][0]), rec = pts[best][2];
       xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.style.display = '';
       tip.style.display = 'block';
-      tip.innerHTML = `<b>step</b> ${fmtCompact(pts[best][0])}<br>` + series.map(s => `<b>${s.name}</b> ${opts.yFmt(s.points[best][1])}`).join('<br>');
+      tip.innerHTML = (rec ? `<b>step</b> ${fmtInt(rec.step)} · <b>t</b> ${fmtTime(rec.time)} · <b>K</b> ${rec.K}<br>` : '') +
+        series.map(s => { const p = s.points[best]; return `<span style="color:${s.color}">■</span> ${s.name} <b>${p && p[1] !== null && p[1] !== undefined ? opts.fmt(p[1], true) : '–'}</b>`; }).join('<br>');
       const cr = el.getBoundingClientRect();
       const px = x / W * r.width;
-      tip.style.left = Math.min(px + 12, cr.width - tip.offsetWidth - 4) + 'px';
-      tip.style.top = (e.clientY - cr.top - 40) + 'px';
+      tip.style.left = Math.max(0, Math.min(px + 12, cr.width - tip.offsetWidth - 4)) + 'px';
+      tip.style.top = Math.max(0, e.clientY - cr.top - tip.offsetHeight - 12) + 'px';
     });
     svg.addEventListener('pointerleave', () => { xh.style.display = 'none'; tip.style.display = 'none'; });
   }
 
-  function depthChart(el, succ, lens) {
-    const W = 1040, H = 170, L = 40, R = 12, Tp = 14, Bt = 30;
+  // ---------- depth × progress heat map ----------
+  function heatChart(el, recs, cfg) {
+    const W = 1160, H = 250, L = 52, R = 70, Tp = 16, Bt = 30, n = 11;
+    const pw = W - L - R, ph = H - Tp - Bt, rh = ph / n;
+    const cols = Math.min(160, recs.length);
+    const xOf = r => r[xKey], xMax = Math.max(1, xOf(recs[recs.length - 1]));
+    // bin records by x
+    const bins = Array.from({ length: cols }, () => ({ sum: new Array(n).fill(0), cnt: 0 }));
+    for (const r of recs) { const b = Math.min(cols - 1, Math.floor(xOf(r) / xMax * cols)); for (let d = 0; d < n; d++) bins[b].sum[d] += r.success_by_depth[d]; bins[b].cnt++; }
+    const c = hex => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+    const c0 = c(css('--panel-3')), c1 = c(css('--cyan')), c2 = c(css('--good'));
+    const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    const colour = v => { const rgb = v < 0.9 ? mix(c0, c1, Math.pow(v / 0.9, 0.7)) : mix(c1, c2, (v - 0.9) / 0.1); return `rgb(${rgb.join(',')})`; };
+    let cells = '', cw = pw / cols;
+    bins.forEach((b, i) => {
+      if (!b.cnt) return;
+      for (let d = 0; d < n; d++) {
+        const v = b.sum[d] / b.cnt, y = Tp + ph - (d + 1) * rh;
+        cells += `<rect x="${(L + i * cw).toFixed(1)}" y="${y.toFixed(1)}" width="${(cw + 0.4).toFixed(1)}" height="${(rh - 1).toFixed(1)}" fill="${colour(v)}"><title>距离 ${d + 1}：解出率 ${pct(v)}</title></rect>`;
+      }
+    });
+    let g = '';
+    for (let d = 1; d <= n; d++) g += `<text x="${L - 7}" y="${Tp + ph - (d - 0.5) * rh + 3.5}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${d}</text>`;
+    const xt = 6;
+    for (let i = 0; i <= xt; i++) { const v = xMax * i / xt, x = L + pw * i / xt; g += `<text x="${x}" y="${H - 9}" text-anchor="${i === 0 ? 'start' : i === xt ? 'end' : 'middle'}" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${fmtX(v)}</text>`; }
+    g += `<text x="${L}" y="${Tp - 5}" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">距离 d（离复原的最少步数）</text>`;
+    // curriculum front
+    let kd = '';
+    recs.forEach((r, i) => { const x = L + xOf(r) / xMax * pw, y = Tp + ph - r.K * rh; kd += (i === 0 ? `M${x} ${y}` : `H${x}V${y}`); });
+    const kpath = `<path d="${kd}" fill="none" stroke="${css('--amber')}" stroke-width="2" stroke-dasharray="5 3"/>`;
+    // colour scale
+    let scale = '';
+    for (let i = 0; i < 20; i++) scale += `<rect x="${W - R + 22}" y="${Tp + ph - (i + 1) * ph / 20}" width="12" height="${ph / 20 + 0.5}" fill="${colour(i / 19)}"/>`;
+    scale += `<text x="${W - R + 40}" y="${Tp + 8}" font-size="9" fill="${css('--muted')}" font-family="${css('--mono')}">100%</text><text x="${W - R + 40}" y="${Tp + ph}" font-size="9" fill="${css('--muted')}" font-family="${css('--mono')}">0%</text>`;
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${cells}${g}${kpath}${scale}</svg>`;
+  }
+
+  function depthChart(el, succ, lens, K) {
+    const W = 1160, H = 190, L = 44, R = 12, Tp = 18, Bt = 42;
     const pw = W - L - R, ph = H - Tp - Bt, n = 11;
-    const slot = pw / n, bw = Math.min(24, slot * 0.5);
+    const slot = pw / n, bw = Math.min(46, slot * 0.55);
     let g = '';
     for (let i = 0; i <= 4; i++) {
       const v = i / 4, y = Tp + ph - v * ph;
-      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="${css('--grid')}"/>`;
-      g += `<text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${Math.round(v * 100)}%</text>`;
+      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="${css('--grid-strong')}" stroke-dasharray="${i ? '2 4' : ''}"/>`;
+      g += `<text x="${L - 7}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${Math.round(v * 100)}%</text>`;
     }
     let bars = '';
     for (let d = 0; d < n; d++) {
-      const v = succ ? succ[d] : 0, x = L + slot * d + (slot - bw) / 2, h = v * ph, y = Tp + ph - h;
-      const rr = Math.min(4, h);
-      bars += `<path d="M${x} ${Tp + ph}V${y + rr}Q${x} ${y} ${x + rr} ${y}H${x + bw - rr}Q${x + bw} ${y} ${x + bw} ${y + rr}V${Tp + ph}Z" fill="${css('--s1')}"><title>距离 ${d + 1}：解出率 ${pct(v)}${lens && lens[d] ? '，平均步数 ' + lens[d].toFixed(2) : ''}</title></path>`;
-      bars += `<text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" font-size="11" fill="${css('--muted')}" font-family="${css('--mono')}">${d + 1}</text>`;
+      const v = succ ? succ[d] : 0, x = L + slot * d + (slot - bw) / 2, h = Math.max(1, v * ph), y = Tp + ph - h;
+      const fill = v >= 0.95 ? css('--good') : v >= 0.5 ? css('--cyan') : css('--rose');
+      const inK = d + 1 <= K;
+      bars += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="3" fill="${fill}" fill-opacity="${inK ? 1 : 0.45}"><title>距离 ${d + 1}：解出率 ${pct(v)}${lens && lens[d] ? '，平均步数 ' + lens[d].toFixed(2) : ''}</title></rect>`;
+      bars += `<text x="${x + bw / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="${css('--ink')}" font-family="${css('--mono')}">${Math.round(100 * v)}%</text>`;
+      bars += `<text x="${x + bw / 2}" y="${H - 24}" text-anchor="middle" font-size="12" fill="${inK ? css('--amber') : css('--muted')}" font-family="${css('--mono')}" font-weight="${inK ? 700 : 400}">${d + 1}</text>`;
+      bars += `<text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">${fmtCompact(DEPTH_COUNT[d + 1])}</text>`;
     }
-    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${bars}<text x="${W - R}" y="${H - 10}" text-anchor="end" font-size="10" fill="${css('--faint')}" font-family="${css('--body')}">距离 d</text></svg>`;
+    if (K) { const xk = L + slot * K; bars += `<line x1="${xk}" x2="${xk}" y1="${Tp}" y2="${Tp + ph}" stroke="${css('--amber')}" stroke-dasharray="4 3"/><text x="${xk - 4}" y="${Tp + 10}" text-anchor="end" font-size="9" fill="${css('--amber')}" font-family="${css('--mono')}">课程到 K=${K}</text>`; }
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${bars}</svg>`;
   }
 
-  function tile(k, v, extra) { return `<div class="tile${extra && extra.hero ? ' hero' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${extra && extra.html ? extra.html : ''}</div>`; }
+  function sparkSvg(vals, color) {
+    const v = vals.filter(x => x !== null && x !== undefined && isFinite(x)).slice(-40);
+    if (v.length < 2) return '';
+    const lo = Math.min(...v), hi = Math.max(...v), W = 64, H = 26;
+    const pts = v.map((y, i) => `${(i / (v.length - 1) * (W - 2) + 1).toFixed(1)},${(H - 2 - (hi - lo < 1e-12 ? 0.5 : (y - lo) / (hi - lo)) * (H - 4)).toFixed(1)}`);
+    return `<div class="spark"><svg viewBox="0 0 ${W} ${H}"><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${pts[pts.length - 1].split(',')[0]}" cy="${pts[pts.length - 1].split(',')[1]}" r="2" fill="${color}"/></svg></div>`;
+  }
+  function tile(o) {
+    return `<div class="tile${o.hero ? ' hero' : ''}" style="--hue:${o.hue || 'var(--line)'}">${o.spark || ''}<div class="k">${o.k}</div><div class="v">${o.v}</div>${o.meter !== undefined ? `<div class="meter"><i style="width:${Math.max(0, Math.min(100, 100 * o.meter))}%"></i></div>` : ''}<div class="d">${o.d}</div></div>`;
+  }
+
+  // ---------- chart cards ----------
+  const CHARTS = [
+    { id: 'succ', title: '随机状态解出率', hue: '--cyan', desc: '随手打乱一个魔方，贪心策略 30 步内能复原的概率（按 367 万状态的距离分布加权）。虚线 = 课程升级时刻。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: (v, full) => (100 * v).toFixed(full ? 2 : 0) + '%', yTitle: '解出率' },
+    { id: 'K', title: '课程深度 K', hue: '--amber', desc: '回合起点 = 复原态打乱 1…K 步。当前深度的解出率过了门槛就 +1，最深 11。', modes: ['fixed'], fixed: [0, 11], fixedTicks: 11, fmt: v => String(Math.round(v)), step: true, yTitle: 'K' },
+    { id: 'cov', title: 'Q 表覆盖率', hue: '--violet', desc: '至少更新过一次的状态 / 3,674,160。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: (v, full) => (100 * v).toFixed(full ? 2 : 0) + '%', yTitle: '状态比例' },
+    { id: 'unseen', title: '未见过状态解出率（泛化）', hue: '--green', desc: '训练里从未采样过的状态，贪心 30 步内能复原的比例。网络「没背过也会做」的部分。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: (v, full) => (100 * v).toFixed(full ? 2 : 0) + '%', yTitle: '解出率', net: true },
+    { id: 'err', title: '价值误差 |Q + d|', hue: '--rose', desc: '预测价值与真实距离的偏差（单位：步）。0 = Q 值完全等于负距离。', modes: ['auto', 'log'], fmt: (v, full) => full ? v.toFixed(3) : v >= 10 ? v.toFixed(0) : v.toFixed(v < 0.1 ? 3 : 2), yTitle: '步' },
+    { id: 'loss', title: '训练损失', hue: '--rose', desc: '最近 200 次更新的 TD 误差均方。', modes: ['auto', 'log'], fmt: (v, full) => full ? v.toExponential(2) : v === 0 ? '0' : v >= 1 ? v.toFixed(1) : v.toExponential(0), yTitle: 'MSE', net: true },
+  ];
+  function buildCharts(isNet) {
+    const box = $('charts');
+    let html = '';
+    for (const c of CHARTS) {
+      if (c.net && !isNet) continue;
+      const mode = modes[c.id] && c.modes.includes(modes[c.id]) ? modes[c.id] : c.modes[0];
+      modes[c.id] = mode;
+      const ctl = c.modes.length > 1 ? `<div class="seg" data-chart="${c.id}">${c.modes.map(m => `<button type="button" data-mode="${m}" class="${m === mode ? 'on' : ''}">${{ auto: '纵轴自适应', fixed: '0–100%', log: '对数' }[m]}</button>`).join('')}</div>` : '';
+      html += `<div class="card" style="--hue:var(${c.hue})"><div class="head"><div><h2><i class="dot" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(${c.hue});margin-right:8px;vertical-align:1px"></i>${c.title}</h2><p class="desc">${c.desc}</p></div><div class="ctl">${ctl}</div></div><div id="c_${c.id}"></div><div class="legend" id="lg_${c.id}"></div></div>`;
+    }
+    html += `<div class="card wide"><div class="head"><div><h2>解出率 × 距离 × 训练进度</h2><p class="desc">每一列是一个时间片，每一行是一个距离 d：颜色越亮，离复原 d 步的状态解出率越高。橙色虚线是课程深度 K 的推进：看「会解的前沿」是不是跟着课程走。</p></div></div><div id="c_heat"></div></div>`;
+    html += `<div class="card wide"><div class="head"><div><h2>最新一次评估：按距离分解</h2><p class="desc">每个距离 d 抽 400 个离复原正好 d 步的状态，贪心走 30 步。柱下的小字是该距离的状态总数；橙色刻度 = 课程已经练到的深度。绿 ≥ 95%，青 ≥ 50%，红 < 50%。</p></div></div><div id="c_depth"></div><div class="tablewrap"><table id="depthTable"></table></div></div>`;
+    box.innerHTML = html;
+    box.querySelectorAll('.seg[data-chart] button').forEach(b => b.addEventListener('click', () => {
+      modes[b.parentNode.dataset.chart] = b.dataset.mode; store.set('chartModes', JSON.stringify(modes));
+      b.parentNode.querySelectorAll('button').forEach(c => c.classList.toggle('on', c === b));
+      if (last) render(last);
+    }));
+    box.dataset.net = isNet ? '1' : '0';
+  }
 
   function render(data) {
     const recs = data.records || [];
     const cfg = data.config || {};
     const r = recs[recs.length - 1];
-    const arch = cfg.backend === 'torch' ? `144-${String(cfg.layers).replace(/,/g, '-')}-9 (${(r && r.device) || 'torch'})` : `144-${cfg.hidden}-${cfg.hidden}-9`;
-    $('cfg').textContent = Object.keys(cfg).length ? (cfg.agent === 'net' ? `神经网络 ${arch} · lr ${r && r.lr !== undefined ? r.lr.toExponential(1) : cfg.lr} · batch ${cfg.batch} · max K ${cfg.max_k} · ` : 'Q 表 · ') + `envs ${cfg.envs} · γ ${cfg.gamma} · ε ${cfg.eps} · cap ${cfg.cap} · promote ${cfg.promote}` : '';
+    const isNet = cfg.agent === 'net';
+    if ($('charts').dataset.net !== (isNet ? '1' : '0')) buildCharts(isNet);
+    const chip = (k, v, cls) => `<span class="chip${cls ? ' ' + cls : ''}">${k} <b>${v}</b></span>`;
+    if (Object.keys(cfg).length) {
+      const arch = cfg.backend === 'torch' ? `144-${String(cfg.layers).replace(/,/g, '-')}-9` : `144-${cfg.hidden}-${cfg.hidden}-9`;
+      $('cfg').innerHTML = (isNet ? chip('agent', 'net · ' + (cfg.backend || 'numpy') + (r && r.device ? ' · ' + r.device : ''), 'accent') + chip('MLP', arch) + chip('lr', r && r.lr !== undefined ? r.lr.toExponential(1) : cfg.lr) + chip('batch', cfg.batch) + chip('max K', cfg.max_k) + (cfg.replay ? chip('targets', 'replay') : chip('targets', 'all-actions')) : chip('agent', 'Q 表 · 3,674,160 × 9', 'accent') + chip('α', cfg.alpha)) +
+        chip('envs', cfg.envs) + chip('γ', cfg.gamma) + chip('ε', cfg.eps) + chip('cap', cfg.cap) + chip('promote', cfg.promote) + (cfg.tag ? chip('tag', cfg.tag) : '');
+    }
     if (!r) {
       $('tiles').innerHTML = `<div class="empty" style="grid-column:1/-1">还没有训练记录。启动训练并打开后台：<code>python play_rubik.py train --dashboard 8000</code>，然后访问 <code>http://localhost:8000/</code>。</div>`;
       return;
     }
-    const finished = r.K === 11 && r.success_random >= 0.999;
+    const maxK = cfg.max_k || 11;
+    const finished = r.K === maxK && r.success_random >= 0.999;
     $('pill').className = 'pill ' + (source === 'live' ? (finished ? 'done' : 'live') : 'done');
-    $('pillText').textContent = source === 'live' ? (finished ? '训练完成 · 服务仍在线' : '实时训练中') : (source === 'embedded' ? '训练记录快照' : '离线记录');
-    const kp = Array.from({ length: 11 }, (_, i) => `<span class="pip${i < r.K ? ' on' : ''}"></span>`).join('');
+    $('pillText').textContent = source === 'live' ? (finished ? 'DONE · 服务在线' : 'LIVE · 训练中') : (source === 'embedded' ? '训练记录快照' : '离线记录');
+    $('subtitle').textContent = isNet
+      ? '二阶魔方的神经网络 Q-learning 训练遥测。网络输入 144 维 one-hot 状态，输出 9 个动作的 Q 值；反向打乱课程，每步奖励 −1，Q 值应收敛到「离复原还差几步」的相反数。'
+      : '二阶魔方的表格式 Q-learning 训练遥测：一张 3,674,160 × 9 的表覆盖全部状态。反向打乱课程，每步奖励 −1，Q 值应收敛到「离复原还差几步」的相反数。';
+    const kp = Array.from({ length: maxK }, (_, i) => `<span class="pip${i < r.K ? ' on' : ''}"></span>`).join('');
+    const atK = r.success_by_depth[r.K - 1], promote = cfg.promote || 0.97;
+    const col = v => css(v);
+    const H = key => recs.map(x => x[key]);
     $('tiles').innerHTML =
-      tile('环境步数', `${fmtCompact(r.step)}<small>${fmtInt(r.step)}</small>`, { hero: true }) +
-      tile('课程深度 K', `${r.K}<small>/ 11</small><span class="pips">${kp}</span>`) +
-      tile('随机状态解出率', `${pct(r.success_random)}`, { html: `<div class="meter"><i style="width:${100 * r.success_random}%"></i></div>` }) +
-      tile(cfg.agent === 'net' ? '训练中访问过的状态' : 'Q 表覆盖率', `${pct(r.coverage)}<small>of 3.67M</small>`, { html: `<div class="meter"><i style="width:${100 * r.coverage}%"></i></div>` }) +
-      tile('价值误差', r.q_error === null ? '–' : `${r.q_error.toFixed(3)}<small>moves</small>`) +
-      (r.updates !== undefined ? tile('吞吐', `${(r.updates / Math.max(r.time, 1e-9)).toFixed(0)}<small>updates / s · ${fmtCompact(r.updates)} 次</small>`) : tile('吞吐', `${fmtCompact(r.sps)}<small>env-steps / s</small>`)) +
-      tile('已用时间', `${fmtTime(r.time)}<small>${fmtCompact(r.episodes)} episodes</small>`) +
-      (r.unseen_success !== undefined ? tile('未见过状态解出率', r.unseen_success === null ? '–' : `${pct(r.unseen_success)}<small>泛化</small>`, { html: `<div class="meter"><i style="width:${100 * (r.unseen_success || 0)}%"></i></div>` }) : '') +
-      (r.loss !== undefined ? tile('训练损失', r.loss === null ? '–' : `${r.loss.toFixed(3)}<small>MSE</small>`) : '');
-    const P = key => recs.map(x => [x.step, x[key]]);
-    lineChart($('cSucc'), [{ name: 'success', color: css('--s1'), points: P('success_random'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
-    lineChart($('cK'), [{ name: 'K', color: css('--s2'), points: P('K') }], { yMin: 0, yMax: 11, yFmt: v => String(Math.round(v)), step: true, ticksY: 11 });
-    if (cfg.agent === 'net') {
-      $('covTitle').innerHTML = '访问过的状态 与 未见过状态解出率 <span>蓝：训练中访问过的状态比例；橙：从未访问过的状态的贪心解出率</span>';
-      lineChart($('cCov'), [{ name: 'seen', color: css('--s1'), points: P('coverage'), area: true }, { name: 'unseen ok', color: css('--s2'), points: recs.map(x => [x.step, x.unseen_success === null ? 0 : x.unseen_success]) }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
-    } else {
-      lineChart($('cCov'), [{ name: 'coverage', color: css('--s1'), points: P('coverage'), area: true }], { yMin: 0, yMax: 1, yFmt: v => Math.round(v * 100) + '%' });
+      tile({ k: '环境步数', v: `${fmtCompact(r.step)}`, d: `累计转动 ${fmtInt(r.step)} 次 · ${fmtCompact(r.episodes)} 个回合 · 已用 ${fmtTime(r.time)}`, hero: true, hue: 'var(--ink)' }) +
+      tile({ k: '课程深度 K', v: `${r.K}<small>/ ${maxK}</small><span class="pips">${kp}</span>`, d: r.K < maxK ? `起点 = 打乱 1…${r.K} 步 · 深度 ${r.K} 解出 ${pct(atK)}，门槛 ${Math.round(100 * promote)}%` : `已到最深 · 深度 ${r.K} 解出 ${pct(atK)}`, hue: 'var(--amber)' }) +
+      tile({ k: '随机状态解出率', v: pct(r.success_random), meter: r.success_random, d: '随手打乱一个魔方，贪心 30 步内复原的概率', hue: 'var(--cyan)', spark: sparkSvg(H('success_random'), col('--cyan')) }) +
+      (isNet
+        ? tile({ k: '已采样状态', v: `${pct(r.coverage)}<small>of 3.67M</small>`, meter: r.coverage, d: '训练里进过更新的状态占全部状态的比例', hue: 'var(--violet)', spark: sparkSvg(H('coverage'), col('--violet')) }) +
+          tile({ k: '未见过状态解出率', v: r.unseen_success === null ? '–' : pct(r.unseen_success), meter: r.unseen_success || 0, d: '泛化：从未采样过的状态里能复原的比例', hue: 'var(--green)', spark: sparkSvg(H('unseen_success'), col('--green')) })
+        : tile({ k: 'Q 表覆盖率', v: `${pct(r.coverage)}<small>of 3.67M</small>`, meter: r.coverage, d: '至少更新过一次的状态占全部状态的比例', hue: 'var(--violet)', spark: sparkSvg(H('coverage'), col('--violet')) })) +
+      tile({ k: '价值误差 |Q+d|', v: r.q_error === null ? '–' : `${r.q_error.toFixed(3)}<small>步</small>`, d: '预测价值与真实距离的平均偏差，0 = 完美', hue: 'var(--rose)', spark: sparkSvg(H('q_error'), col('--rose')) }) +
+      (isNet ? tile({ k: '训练损失', v: r.loss === null ? '–' : r.loss.toFixed(4), d: '最近 200 次更新的 TD 误差均方', hue: 'var(--rose)', spark: sparkSvg(H('loss'), col('--rose')) }) : '') +
+      (r.updates !== undefined
+        ? tile({ k: '吞吐', v: `${(r.updates / Math.max(r.time, 1e-9)).toFixed(1)}<small>upd/s</small>`, d: `${fmtCompact(r.updates)} 次梯度更新 · ${fmtInt(r.sps)} 环境步/s` })
+        : tile({ k: '吞吐', v: `${fmtCompact(r.sps)}<small>steps/s</small>`, d: `每秒环境转动次数 · ${fmtInt(r.solved)} 个回合以复原结束` }));
+
+    const X = x => x[xKey];
+    const P = key => recs.map(x => [X(x), x[key], x]);
+    const markers = [];
+    for (let i = 1; i < recs.length; i++) if (recs[i].K > recs[i - 1].K) markers.push({ x: X(recs[i]), K: recs[i].K });
+    const draw = (c, series, extra) => {
+      const el = $('c_' + c.id); if (!el) return;
+      lineChart(el, series, Object.assign({ mode: modes[c.id], fixed: c.fixed, fixedTicks: c.fixedTicks, fmt: c.fmt, step: c.step, markers, yTitle: c.yTitle }, extra || {}));
+    };
+    const C = Object.fromEntries(CHARTS.map(c => [c.id, c]));
+    draw(C.succ, [{ name: '解出率', color: col('--cyan'), points: P('success_random'), area: true }], { markerLabels: true });
+    $('lg_succ').innerHTML = `<span><i style="background:${col('--cyan')}"></i>随机状态解出率</span><span><i class="dash"></i>课程升级 K</span>`;
+    draw(C.K, [{ name: 'K', color: col('--amber'), points: P('K') }], { markers: [] });
+    $('lg_K').innerHTML = `<span><i style="background:${col('--amber')}"></i>课程深度 K（阶梯：每次升级 +1）</span>`;
+    draw(C.cov, [{ name: isNet ? '已采样' : '覆盖率', color: col('--violet'), points: P('coverage'), area: true }]);
+    $('lg_cov').innerHTML = `<span><i style="background:${col('--violet')}"></i>${isNet ? '训练里采样过的状态 / 3.67M' : '至少更新过一次的状态 / 3.67M'}</span><span><i class="dash"></i>课程升级 K</span>`;
+    if (isNet) {
+      const cc = $('c_cov').parentNode; cc.querySelector('h2').lastChild.textContent = '已采样状态'; cc.querySelector('.desc').textContent = '训练里被采样进过更新的状态 / 3,674,160。网络能解出的「见过」部分的上限。';
+      draw(C.unseen, [{ name: '未见过解出率', color: col('--green'), points: P('unseen_success') }, { name: '随机解出率', color: col('--cyan'), points: P('success_random') }]);
+      $('lg_unseen').innerHTML = `<span><i style="background:${col('--green')}"></i>从未采样过的状态</span><span><i style="background:${col('--cyan')}"></i>全部随机状态（对照）</span><span><i class="dash"></i>课程升级 K</span>`;
+      draw(C.loss, [{ name: 'loss', color: col('--rose'), points: P('loss') }]);
+      $('lg_loss').innerHTML = `<span><i style="background:${col('--rose')}"></i>TD 误差均方（最近 200 次更新）</span>`;
     }
-    const errs = recs.filter(x => x.q_error !== null).map(x => [x.step, x.q_error]);
-    const eMax = Math.max(0.5, ...errs.map(p => p[1]));
-    lineChart($('cErr'), [{ name: '|Q+d|', color: css('--s3'), points: errs }], { yMin: 0, yMax: Math.ceil(eMax * 2) / 2, yFmt: v => v.toFixed(1) });
-    depthChart($('depthChart'), r.success_by_depth, r.mean_len_by_depth);
-    let rows = '<tr><th>距离 d</th><th>状态数</th><th>解出率</th><th class="bar"></th><th>平均步数</th><th>最优</th></tr>';
+    draw(C.err, [{ name: '|Q+d|', color: col('--rose'), points: P('q_error') }]);
+    $('lg_err').innerHTML = `<span><i style="background:${col('--rose')}"></i>mean |max Q(s,·) + d(s)|，单位：步</span><span><i class="dash"></i>课程升级 K</span>`;
+    heatChart($('c_heat'), recs, cfg);
+    depthChart($('c_depth'), r.success_by_depth, r.mean_len_by_depth, r.K);
+    let rows = '<tr><th>距离 d</th><th>状态数</th><th>占比</th><th>解出率</th><th class="bar"></th><th>平均步数</th><th>最优</th><th>多走</th></tr>';
     for (let d = 1; d <= 11; d++) {
       const s = r.success_by_depth[d - 1], ml = r.mean_len_by_depth[d - 1];
-      rows += `<tr><td>${d}</td><td>${fmtInt(DEPTH_COUNT[d])}</td><td>${pct(s)}</td><td class="bar"><div class="track"><i style="width:${100 * s}%"></i></div></td><td>${ml === null ? '–' : ml.toFixed(2)}</td><td>${d}</td></tr>`;
+      rows += `<tr class="${d === r.K ? 'cur' : ''}"><td>${d}${d === r.K ? ' <span class="tag" style="color:var(--amber);border-color:var(--amber)">K</span>' : ''}</td><td>${fmtInt(DEPTH_COUNT[d])}</td><td>${(100 * DEPTH_COUNT[d] / N_STATES).toFixed(2)}%</td><td>${pct(s)}</td><td class="bar"><div class="track"><i style="width:${100 * s}%"></i></div></td><td>${ml === null ? '–' : ml.toFixed(2)}</td><td>${d}</td><td>${ml === null ? '–' : '+' + (ml - d).toFixed(2)}</td></tr>`;
     }
     $('depthTable').innerHTML = rows;
-    $('note').textContent = `最新记录：step ${fmtInt(r.step)}，${fmtInt(r.solved)} 个回合以复原结束。价值误差是在 20 万个随机状态里已访问过的那部分上计算的，收敛时应趋近 0。`;
+    $('note').textContent = `最新记录：step ${fmtInt(r.step)}，训练 ${fmtTime(r.time)}，${fmtInt(r.solved)} 个回合以复原结束。每次评估都重新随机抽样，所以曲线有噪声是正常的。`;
   }
 
   // ---------- simulated cube ----------
   const M = window.CubeModel;
   const cubeCanvas = $('cubeCanvas');
-  if (!window.CubeView.available) { const n = document.createElement('div'); n.className = 'nolib'; n.textContent = '3D 库（three.js, cdnjs）没有加载成功。'; cubeCanvas.parentNode.appendChild(n); }
   const view = window.CubeView.create(cubeCanvas, { palette: M.ENV_COLORS, state: M.SOLVED, dist: 6.8 });
+  if (!view.available) { const n = document.createElement('div'); n.className = 'nolib'; n.textContent = window.CubeView.available ? '这个浏览器没有 WebGL，3D 魔方画不出来（数据照常刷新）。' : '3D 库（three.js, cdnjs）没有加载成功。'; cubeCanvas.parentNode.appendChild(n); }
   let mode = 'spec', paused = false, live = false, policy = null;
   let spec = { state: M.SOLVED, steps: 0, k: 0, status: 'idle', timer: null };
   let ep = null, epPos = 0, lastEpId = -1;
@@ -325,9 +526,9 @@
     const total = v >= 12 ? 0 : 1000 / v;      // 12 = no animation, as fast as the page can draw
     MOVE_MS = Math.round(total * 0.7); HOLD_MS = Math.round(total * 0.3);
     $('cubeSpeedText').textContent = v >= 12 ? '极速' : v + ' 步/秒';
-    try { localStorage.setItem('cubeSpeed', String(v)); } catch (e) {}
+    store.set('cubeSpeed', String(v));
   }
-  try { const v = localStorage.getItem('cubeSpeed'); if (v) $('cubeSpeed').value = v; } catch (e) {}
+  { const v = store.get('cubeSpeed'); if (v) $('cubeSpeed').value = v; }
   setSpeed($('cubeSpeed').value);
   $('cubeSpeed').addEventListener('input', () => setSpeed($('cubeSpeed').value));
 
@@ -335,7 +536,7 @@
   function qbars(q, pick) {
     if (!q) { $('qbars').innerHTML = ''; return; }
     const lo = -12, hi = 0;
-    $('qbars').innerHTML = q.map((v, a) => { const h = Math.max(2, Math.round((v - lo) / (hi - lo) * 100)); return `<div class="qbar${a === pick ? ' pick' : ''}"><div class="col"><i style="height:${h}%"></i></div><div>${M.NOTATION[a]}<div class="v">${v.toFixed(0)}</div></div></div>`; }).join('');
+    $('qbars').innerHTML = q.map((v, a) => { const h = Math.max(2, Math.round((v - lo) / (hi - lo) * 100)); return `<div class="qbar${a === pick ? ' pick' : ''}"><div class="col"><i style="height:${h}%"></i></div><div>${M.NOTATION[a]}<div class="v">${v.toFixed(1)}</div></div></div>`; }).join('');
   }
   function scrambleDepth() { const v = $('specDepth').value; if (v !== 'K') return Number(v); const r = last && last.records && last.records[last.records.length - 1]; return r ? r.K : 6; }
   async function askAction(state) {
@@ -355,12 +556,12 @@
     spec.timer = setTimeout(specTick, HOLD_MS);
   }
   function renderSpec(res) {
-    const dist = spec.status === 'solved' ? `已解出，用了 ${spec.steps} 步` : spec.status === 'failed' ? `走了 ${spec.steps} 步还没解出，放弃` : `第 ${spec.steps} 步`;
+    const dist = spec.status === 'solved' ? `<span class="tag done">已复原</span> 用了 ${spec.steps} 步` : spec.status === 'failed' ? `走了 ${spec.steps} 步还没解出，放弃` : `第 ${spec.steps} 步`;
     kv([['起点', `复原态随机打乱 ${spec.k} 步`], ['进度', dist], ['状态', `<span class="mono">${spec.state}</span>`],
         ['同色面', `${M.check(spec.state)} / 6`],
         ['动作', res ? `${M.NOTATION[res.action]}（${M.ACTIONS[res.action]}）` + (res.unknown ? ' <span class="tag unknown">这一行还没学过</span>' : '') : '–']]);
     qbars(res && res.q, res && res.action);
-    $('cubeNote').textContent = live ? '旁观者不参与训练：每一步向训练器询问当前 Q 表在这个状态下的贪心动作。训练早期它会瞎转，越到后期解得越干脆。柱状图是这一行的 9 个 Q 值（−12 表示还没学过）。' : '旁观者用页面内置的最终策略表求解（训练已结束的快照）。';
+    $('cubeNote').textContent = live ? '旁观者不参与训练：每一步向训练器询问当前策略在这个状态下的贪心动作。训练早期它会瞎转，越到后期解得越干脆。柱状图是这个状态的 9 个 Q 值（≈ 负的剩余步数；−12 表示还没学过），橙色是选中的动作。' : '旁观者用页面内置的最终策略表求解（训练已结束的快照）。';
   }
   async function specTick() {
     if (mode !== 'spec' || paused) return;
@@ -418,7 +619,7 @@
   $('specPause').addEventListener('click', () => { paused = !paused; $('specPause').textContent = paused ? '继续' : '暂停'; if (!paused) { if (mode === 'spec') specTick(); else traceTick(); } });
   function cubeSourceChanged() {
     $('modeTrace').disabled = !live;
-    $('cubeSub').textContent = live ? '实时：训练器正在运行' : '快照：用内置的最终策略表';
+    $('cubeSub').textContent = live ? 'LIVE · 训练器在线' : '快照 · 内置最终策略';
     if (!live && mode === 'trace') setMode('spec');
     else if (live && mode === 'trace') setMode('trace');
   }
@@ -451,7 +652,6 @@
   }
   poll();
   setInterval(poll, 2000);
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => last && render(last));
 })();
 </script>
 </body>

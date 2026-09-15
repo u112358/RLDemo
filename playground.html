@@ -232,12 +232,12 @@
   let realPlan = null;           // {start, moves, pos}
 
   const canvas = $('cv');
-  if (!window.CubeView.available) {
+  const view = window.CubeView.create(canvas, { palette, state });
+  if (!view.available) {
     const note = document.createElement('div'); note.className = 'nolib';
-    note.textContent = '3D 库（three.js, cdnjs）没有加载成功，只显示右侧展开图。';
+    note.textContent = window.CubeView.available ? '这个浏览器没有 WebGL，只显示右侧展开图。' : '3D 库（three.js, cdnjs）没有加载成功，只显示右侧展开图。';
     canvas.parentNode.appendChild(note);
   }
-  const view = window.CubeView.create(canvas, { palette, state });
 
   const envState = () => realMode ? M.fromReal(state).env : state;
 

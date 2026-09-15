@@ -26,18 +26,22 @@
 
   function create(canvas, opts) {
     opts = opts || {};
-    const available = typeof THREE !== 'undefined';
+    let available = typeof THREE !== 'undefined';
     let palette = Object.assign({}, opts.palette || M.ENV_COLORS);
     let state = opts.state || M.SOLVED;
+    let renderer = null;
+    if (available) {
+      try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); }
+      catch (e) { available = false; }          // no WebGL (headless, blocked GPU): degrade instead of throwing
+    }
     if (!available) {
-      // no library: keep the API but do nothing visual
+      // no library / no WebGL: keep the API but do nothing visual
       return {
         available: false, get state() { return state; },
         setState(s) { state = s; }, setPalette(p) { palette = Object.assign({}, p); },
         animate(a, dur, next, cb) { state = next; if (cb) cb(); }, busy: false, setView() {},
       };
     }
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
     renderer.outputEncoding = THREE.sRGBEncoding;
