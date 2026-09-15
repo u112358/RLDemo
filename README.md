@@ -181,6 +181,31 @@ coverage for generalisation.
 The generalisation itself is real but small: 2-4 % of never-visited states
 are solved greedily, against 0 % for any table.
 
+### Memorised or learned? Three tests
+
+`eval --seen` splits every distance into sampled / never-sampled states and
+reports how many greedy moves an unseen state needs before it enters sampled
+territory. Two more scripts separate "capacity" from "reasoning":
+
+```bash
+python symmetry_test.py --tag main       # ~1 min, needs cache/main/net.npz + net_seen.npy
+python capacity.py --layers 1024,1024,512 --n 300000,1000000,2000000,3674160 --steps 6000
+```
+
+`symmetry_test.py` uses the six whole-cube symmetries that keep the DBL cubie
+fixed (rotations U->R->F->U and a mirror). They map every state to another at
+the same distance, so the image of a sampled state is a state the network never
+saw whose solution is the same solution renamed. Images solved as often as the
+originals means the network learned the structure; images solved as rarely as
+random unseen states means it memorised.
+
+`capacity.py` trains the same architecture supervised on the BFS-optimal
+actions of n random states with a fixed optimiser budget and reports the fit,
+held-out accuracy and greedy solve rate. The largest n it fits is the
+architecture's memorisation ceiling; compare it with the number of sampled
+states the RL run actually solves. If RL solves far fewer, the bottleneck is
+Q-learning's optimisation, not the parameter count.
+
 ## Applying the policy to a real cube
 
 The policy only ever turns the top, right and front layers, so the
