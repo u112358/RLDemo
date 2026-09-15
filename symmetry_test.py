@@ -124,8 +124,11 @@ def main():
     for key, label in (('seen', 'sampled states'), ('img', 'symmetric images (unseen)'), ('rnd', 'random unseen states')):
         n, k = tot[key]
         print('  %-27s %7d states, solved %6.2f%%' % (label, n, 100 * k / max(n, 1)))
-    print('\nreading: images >> random unseen at the same distance = the network learned the cube\'s symmetry structure;'
-          '\n         images ≈ random unseen = it memorised the sampled states and nothing transfers, even to a renamed copy.')
+    print('\nreading (compare rows at the same distance):'
+          '\n  images >> random unseen                 the network learned the cube\'s symmetry structure'
+          '\n  sampled >> images ≈ random unseen       it memorised individual states; nothing transfers, even to a renamed copy'
+          '\n  sampled ≈ images ≈ random unseen        neither: it interpolates in sticker space (similar stickers, similar value)'
+          '\n                                          and knows nothing about the symmetry; check beam search for how far that carries')
 
 
 if __name__ == '__main__':
