@@ -37,9 +37,11 @@ import argparse
 import http.server
 import json
 import os
+import shutil
 import sys
 import threading
 import time
+import unicodedata
 
 import numpy as np
 
@@ -421,74 +423,245 @@ def fmt_time(sec):
     return '%d:%02d:%02d' % (sec // 3600, sec % 3600 // 60, sec % 60) if sec >= 3600 else '%d:%02d' % (sec // 60, sec % 60)
 
 
+def dwidth(text):
+    """Display width of a string in terminal cells (CJK characters take two)."""
+    return sum(2 if unicodedata.east_asian_width(ch) in 'WF' else 0 if unicodedata.combining(ch) else 1 for ch in text)
+
+
+SPARK = '▁▂▃▄▅▆▇█'
+
+
+def pad(text, cells):
+    return text + ' ' * max(0, cells - dwidth(text))
+
+
+def sparkline(values, n=16):
+    vals = [v for v in values[-n:] if v is not None]
+    if len(vals) < 2:
+        return ''
+    lo, hi = min(vals), max(vals)
+    if hi - lo < 1e-12:
+        return SPARK[3] * len(vals)
+    return ''.join(SPARK[min(7, int((v - lo) / (hi - lo) * 7.999))] for v in vals)
+
+
+# what every number on the status panel means (the dashboard shows the same definitions)
+METRIC_HELP = [
+    ('K',     '课程深度：训练起点 = 复原态随机打乱 1…K 步；当前深度的解出率过了门槛就 K+1'),
+    ('解出率', '随机打乱的魔方（按全部 3,674,160 个状态的真实分布加权），贪心策略 30 步内复原的比例'),
+    ('泛化',  '训练里从未采样过的状态，贪心策略 30 步内复原的比例 —— 只有网络智能体有'),
+    ('已采样', '训练里采样过的状态占全部状态的比例；Q 表智能体记为「覆盖」= 至少学过一次的状态比例'),
+    ('|Q+d|', '价值误差：|max_a Q(s,a) + 真实 BFS 距离| 的均值，Q 值本应等于「离复原还差几步」的相反数，0 = 完美'),
+    ('loss',  '最近 200 次更新的 TD 误差均方 —— 只有网络智能体有'),
+    ('吞吐',  'upd/s = 每秒梯度更新次数（网络）；步/s = 每秒环境转动次数'),
+]
+
+
 class Progress:
-    """One coloured status line, redrawn at every evaluation (TTY only)."""
-    C = {'dim': '\033[2m', 'cyan': '\033[36m', 'green': '\033[32m', 'yellow': '\033[33m', 'red': '\033[31m',
-         'bold': '\033[1m', 'off': '\033[0m'}
+    """pip-style progress bar plus a small status panel, redrawn in place at every evaluation (TTY only).
+
+    Curriculum promotions and other events scroll past above the panel like pip's "Collecting ..." lines.
+    """
+    # 256-colour palette shared with the dashboard: solve = cyan, curriculum = amber, sampled = violet,
+    # generalisation = green, error = rose; the bar itself is pip's magenta / green when finished
+    C = {'dim': '\033[2m', 'bold': '\033[1m', 'off': '\033[0m',
+         'bar': '\033[38;5;197m', 'bar_bg': '\033[38;5;238m', 'bar_done': '\033[38;5;78m',
+         'cyan': '\033[38;5;51m', 'amber': '\033[38;5;214m', 'violet': '\033[38;5;141m',
+         'green': '\033[38;5;78m', 'rose': '\033[38;5;204m', 'grey': '\033[38;5;245m', 'white': '\033[38;5;255m'}
+    BAR_W = 40
 
     def __init__(self, args, tr, plain):
         self.args, self.tr, self.plain, self.t0 = args, tr, plain, time.time()
         self.max_k = tr_max_k(tr)
         self.start_steps = tr.steps
+        self.drawn = 0                     # lines of the panel currently on screen
+        self.prev_k = tr.K
+        self.hist = {'success_random': [], 'unseen_success': [], 'coverage': [], 'q_error': [], 'loss': []}
+        self.is_net = args.agent == 'net'
 
+    # ---- styling helpers ----
     def col(self, name, text):
         return text if self.plain else self.C[name] + text + self.C['off']
 
-    def line(self, rec):
+    def columns(self):
+        try:
+            return max(60, shutil.get_terminal_size((100, 24)).columns)
+        except Exception:
+            return 100
+
+    def bar(self, frac):
+        frac = min(1.0, max(0.0, frac))
+        filled = frac * self.BAR_W
+        full = int(filled)
+        half = 1 if filled - full >= 0.5 and full < self.BAR_W else 0
+        done = '━' * full + ('╸' if half else '')
+        rest = '━' * (self.BAR_W - full - half)
+        return self.col('bar_done' if frac >= 1 else 'bar', done) + self.col('bar_bg', rest)
+
+    def fit(self, segs):
+        """segs: list of (text, style-or-None, droppable).  Fit the line into the terminal width."""
+        budget = self.columns() - 1
+        keep = list(segs)
+        while sum(dwidth(t) for t, _, _ in keep) > budget and any(d for _, _, d in keep):
+            for i in range(len(keep) - 1, -1, -1):
+                if keep[i][2]:
+                    del keep[i]
+                    break
+        out, used = [], 0
+        for text, style, _ in keep:
+            w = dwidth(text)
+            if used + w > budget:
+                cut = ''
+                for ch in text:
+                    if used + dwidth(cut + ch) > budget:
+                        break
+                    cut += ch
+                text, w = cut, dwidth(cut)
+            used += w
+            out.append(self.col(style, text) if style else text)
+            if used >= budget:
+                break
+        return ''.join(out)
+
+    # ---- content ----
+    def header_segs(self, rec):
+        a = self.args
+        if self.is_net and a.backend == 'torch':
+            who = 'net/torch %s · %s' % (rec.get('device', ''), '-'.join(map(str, [144] + list(self.tr.layers) + [9])))
+        elif self.is_net:
+            who = 'net/numpy · 144-%d-%d-9' % (a.hidden, a.hidden)
+        else:
+            who = 'Q 表 · 3,674,160 × 9'
+        tag = ' · tag %s' % a.tag if getattr(a, 'tag', None) else ''
+        return [(' ▍ ', 'bar', False), ('2×2 cube', 'bold', False), ('  %s%s' % (who, tag), 'grey', False),
+                ('   step %s' % format(rec['step'], ','), 'dim', True)]
+
+    def bar_segs(self, rec):
         a = self.args
         elapsed = time.time() - self.t0
         if a.minutes:
             frac, eta = min(1.0, elapsed / (60 * a.minutes)), 60 * a.minutes - elapsed
+            budget = '时长预算 %d min' % a.minutes
         else:
             done_steps = rec['step'] - self.start_steps
             frac = min(1.0, done_steps / a.steps)
             eta = (a.steps - done_steps) / max(rec['sps'], 1)
-        # progress towards the target counts too: show whichever is further along
+            budget = '步数预算 %s' % format(a.steps, ',')
         goal = min(1.0, rec['success_random'] / a.target) * (rec['K'] / self.max_k)
-        frac = max(frac, goal)
-        width = 22
-        bar = '█' * int(frac * width) + '░' * (width - int(frac * width))
-        succ = rec['success_random']
-        scol = 'green' if succ >= 0.95 else 'yellow' if succ >= 0.5 else 'red'
-        pips = '▮' * rec['K'] + '▯' * (self.max_k - rec['K'])
-        parts = [
-            self.col('cyan', bar) + ' %3d%%' % (100 * frac),
-            '已用 %s 剩余 %s' % (fmt_time(elapsed), fmt_time(eta) if frac < 1 else '0:00'),
-            'K ' + self.col('green', pips) + ' %d/%d' % (rec['K'], self.max_k),
-            '解出 ' + self.col(scol, '%6.2f%%' % (100 * succ)),
-            '覆盖 %5.1f%%' % (100 * rec['coverage']),
-            '|Q+d| %s' % ('%.2f' % rec['q_error'] if rec['q_error'] is not None else 'n/a'),
-        ]
-        if rec.get('loss') is not None:
-            parts.append('loss %.3f' % rec['loss'])
-        if rec.get('unseen_success') is not None:
-            parts.append('未见 %.1f%%' % (100 * rec['unseen_success']))
-        parts.append(self.col('dim', '%.1f upd/s' % (rec['updates'] / max(rec['time'], 1e-9)) if rec.get('updates')
-                              else '%s steps/s' % format(rec['sps'], ',')))
-        return '  '.join(parts)
+        if goal > frac:                     # closer to the target than to the budget: show that instead
+            frac, eta = goal, eta * (1 - goal) / max(1e-9, 1 - frac) if frac < 1 else 0
+        eta_text = '0:00' if frac >= 1 else fmt_time(eta)
+        return [(' ', None, False), (self.bar(frac), None, False), (' %3d%%' % round(100 * frac), 'bold', False),
+                ('  已用 %s' % fmt_time(elapsed), 'white', False), ('  剩余 %s' % eta_text, 'white', False),
+                ('   ' + budget, 'dim', True)]
+
+    def metric_segs(self, label, style, value, spark, desc, extra=''):
+        segs = [(' ' + pad(label, 7), 'grey', False), (value, style, False)]
+        segs.append(('  ' + spark if spark else '  ' + ' ' * 16, 'dim', True))
+        segs.append(('  ' + desc, 'dim', True))
+        if extra:
+            segs.append(('   ' + extra, 'grey', True))
+        return segs
+
+    def lines(self, rec):
+        K, succ = rec['K'], rec['success_random']
+        for k in self.hist:
+            self.hist[k].append(rec.get(k))
+        at_k = rec['success_by_depth'][K - 1]
+        promote = getattr(self.tr, 'promote', 0.97)
+        pips = '▮' * K + '▯' * (self.max_k - K)
+        k_state = ('深度 %d 解出 %.1f%% / 升级门槛 %.0f%%' % (K, 100 * at_k, 100 * promote)) if K < self.max_k \
+            else '已到最深，深度 %d 解出 %.1f%%' % (K, 100 * at_k)
+        out = [self.header_segs(rec), self.bar_segs(rec),
+               [(' ' + pad('课程 K', 7), 'grey', False), ('%2d/%d ' % (K, self.max_k), 'amber', False), (pips, 'amber', False),
+                ('   起点 = 复原态打乱 1…%d 步' % K, 'dim', True), ('   ' + k_state, 'grey', True)]]
+        scol = 'green' if succ >= 0.95 else 'cyan' if succ >= 0.5 else 'rose'
+        out.append(self.metric_segs('解出率', scol, '%6.2f%%' % (100 * succ), sparkline(self.hist['success_random']),
+                                    '随机打乱的魔方，贪心 30 步内复原的比例（按 367 万状态分布加权）'))
+        if self.is_net:
+            u = rec.get('unseen_success')
+            out.append(self.metric_segs('泛化', 'green', '%6.2f%%' % (100 * u) if u is not None else '   n/a ',
+                                        sparkline(self.hist['unseen_success']), '训练里从未采样过的状态，贪心能复原的比例'))
+            out.append(self.metric_segs('已采样', 'violet', '%6.2f%%' % (100 * rec['coverage']), sparkline(self.hist['coverage']),
+                                        '训练里采样过的状态 / 3,674,160 个状态'))
+        else:
+            out.append(self.metric_segs('覆盖', 'violet', '%6.2f%%' % (100 * rec['coverage']), sparkline(self.hist['coverage']),
+                                        'Q 表里至少学过一次的状态 / 3,674,160 个状态'))
+        qe = rec['q_error']
+        extra = ('loss %.4f' % rec['loss']) if rec.get('loss') is not None else ''
+        out.append(self.metric_segs('|Q+d|', 'rose', '%6.3f ' % qe if qe is not None else '   n/a ', sparkline(self.hist['q_error']),
+                                    '价值误差 = |Q 值 + 真实距离| 均值，0 = 完美', extra))
+        thr = ('%.1f upd/s · %s 步/s' % (rec['updates'] / max(rec['time'], 1e-9), format(rec['sps'], ','))
+               if rec.get('updates') else '%s 步/s' % format(rec['sps'], ','))
+        out.append([(' ' + pad('吞吐', 7), 'grey', False), (thr, 'white', False),
+                    ('   %s 回合 · 复原 %s · 训练用时 %s' % (format(rec['episodes'], ','), format(rec['solved'], ','), fmt_time(rec['time'])), 'dim', True)])
+        return [self.fit(s) for s in out]
+
+    # ---- drawing ----
+    def clear(self):
+        if self.drawn and not self.plain:
+            sys.stdout.write('\033[%dA' % self.drawn + '\r' + '\033[J')
+            self.drawn = 0
+
+    def log(self, text, style='grey'):
+        """Print an event line above the panel (survives in the scrollback)."""
+        stamp = fmt_time(time.time() - self.t0)
+        if self.plain:
+            print('[%s] %s' % (stamp, text))
+            return
+        self.clear()
+        sys.stdout.write(self.col('dim', ' [%s] ' % stamp) + self.col(style, text) + '\n')
+        sys.stdout.flush()
 
     def show(self, rec, final=False):
-        text = self.line(rec)
+        if self.tr.K > self.prev_k:
+            d = rec['K']
+            self.log('↑ 课程升级  K %d → %d   深度 %d 解出 %.1f%% ≥ 门槛 %.0f%%'
+                     % (self.prev_k, self.tr.K, d, 100 * rec['success_by_depth'][d - 1], 100 * getattr(self.tr, 'promote', 0.97)), 'amber')
+            self.prev_k = self.tr.K
         if self.plain:
             print(fmt_row(rec))
             return
+        lines = self.lines(rec)
         try:
-            sys.stdout.write('\r\033[2K' + text + ('\n' if final else ''))
+            self.clear()
+            sys.stdout.write('\n'.join(lines) + '\n')
+            self.drawn = len(lines)
+            if final:
+                self.drawn = 0
         except UnicodeEncodeError:
-            sys.stdout.write('\r' + fmt_row(rec))
+            sys.stdout.write(fmt_row(rec) + '\n')
+        sys.stdout.flush()
+
+    def legend(self):
+        rows = METRIC_HELP if self.is_net else [r for r in METRIC_HELP if r[0] not in ('泛化', 'loss')]
+        if self.plain:
+            for k, v in rows:
+                print('  %-6s %s' % (k, v))
+            return
+        sys.stdout.write(self.col('bold', ' 指标说明') + '\n')
+        for k, v in rows:
+            sys.stdout.write('  ' + self.col('white', '%-6s' % k) + ' ' + self.col('dim', v) + '\n')
+        sys.stdout.write('\n')
         sys.stdout.flush()
 
 
 def fmt_row(rec):
-    extra = ''
+    """One plain line per evaluation (log files, --plain, non-TTY)."""
+    parts = ['step %11s' % format(rec['step'], ','), 'time %8s' % fmt_time(rec['time']), 'K %2d' % rec['K'],
+             'solve %6.2f%%' % (100 * rec['success_random'])]
     if rec.get('unseen_success') is not None:
-        extra = '  unseen %6.2f%%  loss %.3f' % (100 * rec['unseen_success'], rec['loss'] or 0)
+        parts.append('sampled %5.1f%%' % (100 * rec['coverage']))
+        parts.append('unseen-solve %6.2f%%' % (100 * rec['unseen_success']))
+    else:
+        parts.append('coverage %5.1f%%' % (100 * rec['coverage']))
+    parts.append('|Q+d| %s' % ('%.3f' % rec['q_error'] if rec['q_error'] is not None else 'n/a'))
+    if rec.get('loss') is not None:
+        parts.append('loss %.4f' % rec['loss'])
     if rec.get('updates'):
-        extra += '  %.1f updates/s' % (rec['updates'] / max(rec['time'], 1e-9))
-    return ('step %10d  %6.0fs  K=%2d  coverage %5.1f%%  success(random) %6.2f%%  Q-err %s  %s env-steps/s%s'
-            % (rec['step'], rec['time'], rec['K'], 100 * rec['coverage'], 100 * rec['success_random'],
-               '%.3f' % rec['q_error'] if rec['q_error'] is not None else '  n/a',
-               format(rec['sps'], ','), extra))
+        parts.append('%.1f upd/s' % (rec['updates'] / max(rec['time'], 1e-9)))
+    parts.append('%s steps/s' % format(rec['sps'], ','))
+    return '  '.join(parts)
 
 
 def train(args):
@@ -554,7 +727,10 @@ def train(args):
     if args.dashboard:
         serve(args.dashboard, Serving(tr, args.agent))
     progress = Progress(args, tr, plain=args.plain or not enable_ansi())
+    progress.legend()
     run_start, start_steps = time.time(), tr.steps    # --minutes and --steps count this process only, also after --resume
+    progress.log('开始训练  ' + ('时长预算 %d 分钟' % args.minutes if args.minutes else '步数预算 %s' % format(args.steps, ','))
+                 + '  每 %d 次迭代评估一次' % args.eval_every + ('  · 从 K=%d 续训' % tr.K if args.resume else ''))
     i = 0
     try:
         while tr.steps - start_steps < args.steps and not (args.minutes and time.time() - run_start > 60 * args.minutes):
@@ -569,21 +745,23 @@ def train(args):
                 write_metrics(tr.metrics, pt['metrics'])
                 done = rec['success_random'] >= args.target and (args.agent == 'net' or rec['coverage'] >= args.target)
                 if rec['K'] == tr_max_k(tr) and done:
-                    print('\ntarget reached')
+                    progress.log('✔ 达到目标：K=%d，解出率 %.2f%% ≥ %.1f%%' % (rec['K'], 100 * rec['success_random'], 100 * args.target), 'green')
                     break
+        else:
+            progress.log('预算用完，最后评估一次并保存', 'amber')
     except KeyboardInterrupt:
-        print('\ninterrupted, saving')
+        progress.log('Ctrl-C：最后评估一次并保存', 'amber')
     rec = tr.evaluate()
     progress.show(rec, final=True)
     write_metrics(tr.metrics, pt['metrics'])
     if args.agent == 'net':
-        print('computing the greedy action of every state (about 30 s)')
+        progress.log('导出每个状态的贪心动作（约 30 s）')
         tr.save(NET_PATH, NET_POLICY_PATH)
         np.save(NET_SEEN_PATH, np.packbits(tr.seen))
     else:
         tr.save()
-    print_table(rec)
-    print('saved', pt['model'], pt['policy'], pt['metrics'])
+    print_table(rec, progress)
+    progress.log('已保存 %s  %s  %s' % (pt['model'], pt['policy'], pt['metrics']), 'green')
     if args.dashboard:
         print('still serving; Ctrl-C to quit')
         wait_forever()
@@ -609,11 +787,21 @@ def serve_cmd(args):
     wait_forever()
 
 
-def print_table(rec):
-    print('\ndistance  success  mean length (optimal)')
+DEPTH_COUNT = [1, 9, 54, 321, 1847, 9992, 50136, 227536, 870072, 1887748, 623800, 2644]
+
+
+def print_table(rec, progress=None):
+    """Per-distance breakdown: 400 states at each exact distance d, greedy policy, 30-move limit."""
+    col = progress.col if progress else (lambda name, text: text)
+    print()
+    print(col('bold', ' 按距离分解') + col('dim', '   每个距离 d 抽 400 个离复原正好 d 步的状态，贪心走 30 步'))
+    print(col('grey', '  距离   状态数      解出率                        平均步数(最优)'))
     for d in range(1, MAX_DEPTH + 1):
+        s = rec['success_by_depth'][d - 1]
         ml = rec['mean_len_by_depth'][d - 1]
-        print('  %2d      %6.1f%%   %s' % (d, 100 * rec['success_by_depth'][d - 1], '%.2f (%d)' % (ml, d) if ml else '-'))
+        n = int(round(s * 24))
+        bar = col('green' if s >= 0.95 else 'cyan' if s >= 0.5 else 'rose', '█' * n) + col('bar_bg', '░' * (24 - n))
+        print('  %2d   %9s   %6.1f%%  %s  %s' % (d, format(DEPTH_COUNT[d], ','), 100 * s, bar, '%.2f (%d)' % (ml, d) if ml else '-'))
 
 
 def load_policy(agent):
