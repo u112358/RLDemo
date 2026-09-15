@@ -52,6 +52,7 @@ METRICS_PATH = os.path.join(CACHE, 'metrics.json')
 NET_PATH = os.path.join(CACHE, 'net.npz')
 NET_POLICY_PATH = os.path.join(CACHE, 'net_policy.npy')
 NET_METRICS_PATH = os.path.join(CACHE, 'net_metrics.json')
+NET_SEEN_PATH = os.path.join(CACHE, 'net_seen.npy')          # packed bitmap of states sampled during training
 MAX_DEPTH = 11
 
 
@@ -524,6 +525,8 @@ def train(args):
         if args.agent != 'net' or not os.path.exists(NET_PATH):
             raise SystemExit('--resume needs a saved network agent (cache/net.npz)')
         tr.load(NET_PATH)
+        if os.path.exists(NET_SEEN_PATH):
+            tr.seen |= np.unpackbits(np.load(NET_SEEN_PATH))[:rb.N_STATES].astype(bool)
         if os.path.exists(NET_METRICS_PATH):
             with open(NET_METRICS_PATH) as f:
                 old = json.load(f).get('records', [])
@@ -563,6 +566,7 @@ def train(args):
     if args.agent == 'net':
         print('computing the greedy action of every state (about 30 s)')
         tr.save(NET_PATH, NET_POLICY_PATH)
+        np.save(NET_SEEN_PATH, np.packbits(tr.seen))
     else:
         tr.save()
     print_table(rec)
@@ -674,6 +678,38 @@ def evaluate_net(args):
     rec = {'success_by_depth': [], 'mean_len_by_depth': []}
     weight = np.bincount(dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
     total = weight[0]
+    seen = None
+    if args.seen:
+        if not os.path.exists(NET_SEEN_PATH):
+            sys.exit('no %s: train (or resume) once with the current code to record which states were sampled' % NET_SEEN_PATH)
+        seen = np.unpackbits(np.load(NET_SEEN_PATH))[:rb.N_STATES].astype(bool)
+        print('states sampled during training: %.2f%%' % (100 * seen.mean()))
+        print('\ndistance   seen: n  solved   |  unseen: n  solved   steps-to-seen (median / >=3 / never)   |Q+d| seen / unseen')
+        for d in range(1, MAX_DEPTH + 1):
+            pool = np.nonzero(dist == d)[0]
+            pick = pool[rng.integers(pool.shape[0], size=min(4000, pool.shape[0]))]
+            ps, pu = pick[seen[pick]], pick[~seen[pick]]
+            ok_s = greedy_rollout(qf, T, ps) > 0 if ps.size else np.zeros(0, bool)
+            ok_u = greedy_rollout(qf, T, pu) > 0 if pu.size else np.zeros(0, bool)
+            # for unseen states that get solved: how many greedy moves until the path enters a seen state
+            hops = []
+            for s0 in pu[ok_u][:500]:
+                st, h = int(s0), 0
+                while st != rb.SOLVED_INDEX and not seen[st] and h < 30:
+                    st = int(T[st, int(np.argmax(qf(np.array([st]))[0]))]); h += 1
+                hops.append(h if seen[st] else 99)
+            hops = np.array(hops)
+            err_s = float(np.abs(qf(ps).max(axis=1) + d).mean()) if ps.size else float('nan')
+            err_u = float(np.abs(qf(pu).max(axis=1) + d).mean()) if pu.size else float('nan')
+            print('  %2d      %5d  %6.1f%%   |  %5d  %6.1f%%   %s   %.2f / %.2f' % (
+                d, ps.size, 100 * ok_s.mean() if ps.size else 0, pu.size, 100 * ok_u.mean() if pu.size else 0,
+                ('%3d / %4.0f%% / %4.0f%%' % (np.median(hops[hops < 99]) if (hops < 99).any() else 0,
+                                              100 * (hops[hops < 99] >= 3).mean() if (hops < 99).any() else 0,
+                                              100 * (hops == 99).mean())) if hops.size else '   -  /    - /    -',
+                err_s, err_u))
+        print('steps-to-seen: greedy moves from an unseen solved state until the path first enters a sampled state;'
+              ' "never" = solved without touching any sampled state')
+        return
     n_eval = 2000 if not args.beam else 200
     for d in range(1, MAX_DEPTH + 1):
         pool = np.nonzero(dist == d)[0]
@@ -735,6 +771,7 @@ def main():
     e.add_argument('--seed', type=int, default=0)
     e.add_argument('--agent', choices=['table', 'net'], default='table')
     e.add_argument('--beam', type=int, default=0, metavar='W', help='net: beam search of width W on the value function instead of greedy')
+    e.add_argument('--seen', action='store_true', help='net: split every distance into states sampled during training vs never sampled')
     s = sub.add_parser('solve')
     s.add_argument('state', help='24 letters, e.g. %s' % rb.INIT)
     s.add_argument('--agent', choices=['table', 'net'], default='table')

@@ -103,6 +103,14 @@ bf16 autocast for the forward passes. `--lr-final 1e-4` cosine-decays the
 learning rate over `--minutes`, which sharpens the values once the curriculum
 has stalled.
 
+**Seen vs unseen.** The set of states sampled during training is saved
+with the network (`cache/net_seen.npy`). `eval --agent net --seen` splits
+every distance into sampled and never-sampled states, reports the greedy
+solve rate of each, and for solved never-sampled states counts how many
+greedy moves it took to reach a sampled state: mostly 1-2 means memory plus
+one step of local generalisation, "never" means the value function
+generalised along the whole path.
+
 **Search on top of the value function.** A greedy walk needs every Q-value
 to be right; a beam search only needs the solved state to be reachable
 through states the network rates highly. `eval --agent net --beam 32` and
