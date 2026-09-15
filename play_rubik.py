@@ -810,11 +810,11 @@ def serve_cmd(args):
 DEPTH_COUNT = [1, 9, 54, 321, 1847, 9992, 50136, 227536, 870072, 1887748, 623800, 2644]
 
 
-def print_table(rec, progress=None):
-    """Per-distance breakdown: 400 states at each exact distance d, greedy policy, 30-move limit."""
+def print_table(rec, progress=None, n_per_depth=400, method='贪心走 30 步'):
+    """Per-distance breakdown: n_per_depth states at each exact distance d, greedy policy (or beam search), 30-move limit."""
     col = progress.col if progress else (lambda name, text: text)
     print()
-    print(col('bold', ' 按距离分解') + col('dim', '   每个距离 d 抽 400 个离复原正好 d 步的状态，贪心走 30 步'))
+    print(col('bold', ' 按距离分解') + col('dim', '   每个距离 d 抽 %d 个离复原正好 d 步的状态，%s' % (n_per_depth, method)))
     print(col('grey', '  距离   状态数      解出率                        平均步数(最优)'))
     for d in range(1, MAX_DEPTH + 1):
         s = rec['success_by_depth'][d - 1]
@@ -883,7 +883,7 @@ def evaluate(args):
     rec = tr.evaluate(n_per_depth=2000)
     print('coverage %.2f%%   success on a uniformly random state %.3f%%   mean |Q + distance| %.4f'
           % (100 * rec['coverage'], 100 * rec['success_random'], rec['q_error']))
-    print_table(rec)
+    print_table(rec, n_per_depth=2000)
 
 
 def evaluate_net(args):
@@ -947,7 +947,7 @@ def evaluate_net(args):
     err = float(np.abs(qf(sample).max(axis=1) + dist[sample]).mean())
     print('%s   success on a uniformly random state %.3f%%   mean |Q + distance| %.4f'
           % ('beam search, width %d' % args.beam if args.beam else 'greedy', 100 * total, err))
-    print_table(rec)
+    print_table(rec, n_per_depth=n_eval, method='宽度 %d 束搜索' % args.beam if args.beam else '贪心走 30 步')
 
 
 def main():

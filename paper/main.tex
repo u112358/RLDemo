@@ -177,7 +177,10 @@ $10^{-4}$, batches of 4{,}096 states, a target network refreshed every 200 updat
 all-actions targets $y(s,a) = -1 + \max_{a'} \Q^-(T(s,a),a')$ for every action of every sampled
 state \citep{agostinelli2019}. Promotion threshold $0.9$, one hour on an Apple M1~Max.
 A second run on an RTX~4090 uses hidden layers 2048--2048--1024 ($6.6$M parameters) for
-$5.3$~hours with threshold $0.97$. \todo{report update counts and throughput for both runs.}
+$5.3$~hours with threshold $0.97$. The main run made $35{,}594$ gradient updates in 63 minutes
+($9.4$ updates/s, $2.3\times10^6$ environment steps, $6.5\times10^5$ episodes): $1.5\times10^8$
+state rows in total, about 130 per sampled state on average, heavily skewed towards the shallow
+states that every episode passes through. \todo{update count and throughput of the 4090 run.}
 
 \section{Diagnostics}
 \label{sec:diagnostics}
@@ -230,8 +233,8 @@ The main run's curriculum stalled at $K=7$: greedy success at distance~7 stayed 
 against a threshold of $90\%$. Training sampled $29.9\%$ of all states. The larger 4090 run also
 stalled at $K=7$ with $78.8\%$ of states sampled, $30\%$ greedy success on random states and
 $12.6\%$ on never-sampled states. Table~\ref{tab:seen} gives the seen/unseen split of the main
-run; the greedy success on uniformly random states implied by it is about $16\%$
-(\todo{replace by the directly measured value}).
+run; measured directly with 2{,}000 states per distance, greedy success on uniformly random
+states is $15.8\%$ and the mean value error is $1.07$.
 
 \begin{table}[t]
 \centering\small
@@ -429,7 +432,7 @@ question cannot be answered.
 \section*{Reproducibility}
 Code, the training monitor and the diagnostic scripts (\texttt{eval --seen}, \texttt{eval
 --beam}, \texttt{symmetry\_test.py}, \texttt{capacity.py}) are available at
-\todo{repository URL}. All runs are reproducible from the command lines in the appendix.
+\url{https://github.com/u112358/RLDemo}. All runs are reproducible from the command lines in the appendix.
 
 \bibliographystyle{plainnat}
 \begin{thebibliography}{99}
