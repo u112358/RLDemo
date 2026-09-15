@@ -1,0 +1,532 @@
+% First draft. Compile with pdflatex (Overleaf works). Swap the preamble for the venue's
+% style file (rlc.sty / neurips_2026.sty / iclr2027_conference.sty) when a target is chosen.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\Q}{Q}
+\newcommand{\dist}{d}
+
+\title{Memorise, Interpolate, or Reason?\\
+\large Diagnosing what a value network learns on an exhaustively solvable problem}
+\author{Bingzhang Hu\thanks{Affiliation and e-mail. Draft v0.1.}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+When a neural value function solves a combinatorial puzzle, it is rarely clear whether it has
+memorised the training states, learned the structure of the problem, or something in between.
+We study this question on a problem small enough to be solved exactly: the $2\times2\times2$
+pocket cube, whose $3{,}674{,}160$ states and their exact distances to the solved state can be
+enumerated by breadth-first search. A tabular Q-learner covers the whole space in two minutes and
+serves as ground truth. We then train the same Q-learning procedure with a multilayer perceptron
+and introduce four diagnostics that each rule out one explanation of its behaviour: a
+seen/unseen split of the evaluation states, a \emph{symmetry-image} test that asks the network to
+solve renamed copies of states it trained on, the gap between greedy and beam-search success with
+the same value function, and a supervised \emph{capacity ceiling} that measures how many states
+the architecture can memorise when handed the answers. On the cube the network neither memorises
+individual states (seen and unseen states at the same distance are solved equally often) nor
+learns the cube's symmetries (symmetric images of training states are solved no better than
+random unseen states), yet its value function is informative far beyond the training
+distribution: beam search of width~32 solves $90\%$ of uniformly random states where greedy
+solves about $16\%$. The curriculum stalls at depth~7 because the value error ($0.95$~moves)
+matches the gap between adjacent actions, not because the network lacks capacity: the same
+architecture, trained supervised on all states, reaches $79\%$ greedy success in two minutes,
+while it can memorise only $0.3$--$1$~million states exactly. We argue that exhaustively solvable
+problems are a useful testbed for separating memorisation, interpolation and optimisation in deep
+reinforcement learning, and release the code and diagnostics.
+\end{abstract}
+
+\section{Introduction}
+
+Deep reinforcement learning (RL) has solved combinatorial puzzles such as the Rubik's cube
+with a learned value function and a search on top of it \citep{mcaleer2018,agostinelli2019}.
+Such results are usually reported as success rates on random instances. They leave open a
+question that matters for how the method should be understood and extended: what does the value
+network actually represent? Three answers are commonly given, often implicitly.
+The network may have \emph{memorised} the states it saw during training and their values, so
+that success on unseen states comes from those states lying a step or two from memorised
+ones. It may have learned the \emph{structure} of the problem, for example the symmetries of the
+puzzle, so that a solution learned for one state transfers to every equivalent state.
+Or it may have learned a \emph{smooth interpolant} in the input representation that ranks
+neighbouring states approximately, without either per-state memory or structural knowledge.
+
+These explanations are hard to separate on the problems where deep RL is usually applied,
+because the ground truth is unavailable: nobody knows the optimal value of a random
+$3\times3\times3$ cube state, and ``unseen'' states cannot be identified without the training
+trace. We therefore study a problem small enough to be solved exactly but large enough that a
+network must compress it. The $2\times2\times2$ pocket cube with one cubie fixed has
+$7!\cdot3^6 = 3{,}674{,}160$ reachable states, nine moves, and a maximum distance to the solved
+state of~11. Breadth-first search (BFS) gives every state's exact distance in seconds, and a
+bitmap of the states visited during training gives the exact seen/unseen split.
+
+Our contributions are:
+\begin{enumerate}
+\item A testbed in which tabular Q-learning with a reverse-scramble curriculum covers the full
+  state space in about two minutes, so that every network result can be compared with the exact
+  optimal policy and value function (\S\ref{sec:testbed}).
+\item Four diagnostics that each rule out one explanation of what a value network has learned
+  (\S\ref{sec:diagnostics}): a seen/unseen split with a ``steps-to-seen'' statistic, a
+  symmetry-image test built from the six whole-cube symmetries that preserve the move set, the
+  greedy-versus-beam gap, and a supervised capacity ceiling.
+\item An empirical finding on the cube (\S\ref{sec:results}): the network's value function is
+  a smooth interpolant in sticker space. It is equally good on seen and unseen states, blind to
+  the cube's symmetries, and far more informative than the greedy policy reveals. The
+  curriculum stalls because the value error matches the one-move gap between actions, and the
+  architecture is not the bottleneck: supervised on the full state space it reaches $79\%$
+  greedy success in two minutes, although it can memorise only about a million states exactly.
+\end{enumerate}
+
+\section{Related work}
+
+\paragraph{Learning to solve the cube.}
+Autodidactic Iteration \citep{mcaleer2018} and DeepCubeA \citep{agostinelli2019} train a value
+network on states generated by scrambling the solved cube and solve random instances with a
+search (Monte-Carlo tree search, then weighted A$^*$) guided by the network. Both report
+success with search; neither separates what the network knows from what the search adds. Our
+greedy-versus-beam diagnostic makes that separation on a problem where the optimal answer is
+known for every state.
+
+\paragraph{Memorisation and capacity.}
+Classical results bound how many random labels a network can fit \citep{cover1965,baum1988};
+\citet{zhang2017} showed that modern networks fit random labels on real data. Recent work
+measures storage capacity directly: about two bits of knowledge per parameter under
+sufficient training \citep{allenzhu2024}, and about $3.6$ bits per parameter for random data in
+language models \citep{morris2025}. Our supervised capacity ceiling applies the same idea to a
+value network, with the difference that the ``knowledge'' has a known structure, so that the
+transition from memorising to generalising can be observed against exact ground truth.
+
+\paragraph{Generalisation beyond capacity.}
+Grokking \citep{power2022} and double descent \citep{nakkiran2020} describe regimes in which a
+network that could memorise its training set instead, or eventually, finds a generalising
+solution. We observe the complementary regime: when the training set exceeds what the network
+can memorise, the forced compression yields a policy that solves most random states although
+it fits only $56\%$ of the training labels.
+
+\paragraph{Optimisation pathologies in deep RL.}
+Value networks trained with bootstrapped targets lose capacity and plasticity over
+training \citep{lyle2022,nikishin2022,sokar2023}. Our comparison of Q-learning with supervised
+training of the same architecture on the same states isolates the cost of the RL learning
+signal from the capacity of the architecture.
+
+\paragraph{Curricula.}
+Reverse curricula that start episodes near the goal and move the start distribution
+outward \citep{florensa2017} are standard for goal-reaching tasks; we use one and show how a
+promotion criterion based on greedy success can lock the curriculum when the value error is of
+the order of one move.
+
+\section{Testbed}
+\label{sec:testbed}
+
+\paragraph{Environment.}
+A state is the colour of each of the 24 stickers. Fixing the down-back-left cubie removes
+whole-cube rotations, leaving seven cubies with $7!$ permutations and $3^6$ orientations. The
+nine actions are quarter, half and three-quarter turns of the up, right and front layers.
+We give every state a perfect-hash index (Lehmer rank of the corner permutation times the
+base-3 orientation code), precompute the $3{,}674{,}160\times9$ transition table, and compute
+the exact distance $\dist(s)$ of every state by BFS from the solved state. Table~\ref{tab:depth}
+gives the distance histogram; $92\%$ of the states, and hence of uniformly random scrambles,
+lie at distance 8--10.
+
+\begin{table}[t]
+\centering\small
+\caption{Number of states at each exact distance from the solved state.}
+\label{tab:depth}
+\begin{tabular}{lrrrrrrrrrrrr}
+\toprule
+distance & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 & 10 & 11 \\
+\midrule
+states & 1 & 9 & 54 & 321 & 1{,}847 & 9{,}992 & 50{,}136 & 227{,}536 & 870{,}072 & 1{,}887{,}748 & 623{,}800 & 2{,}644 \\
+share  & -- & -- & -- & -- & 0.05\% & 0.27\% & 1.4\% & 6.2\% & 23.7\% & 51.4\% & 17.0\% & 0.07\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Learning problem.}
+Every move costs $-1$ and an episode ends at the solved state, so with $\gamma=1$ the optimal
+action value is $\Q^*(s,a) = -\dist(s')$ for the successor $s'$, and $\max_a \Q^*(s,a) = -\dist(s)$.
+The value error of a learned $\Q$ on a state is therefore $|\max_a \Q(s,a) + \dist(s)|$, in moves.
+Episodes start from the solved state scrambled by $k\sim\mathrm{Uniform}\{1,\dots,K\}$ random
+moves (consecutive moves on different layers). The curriculum depth $K$ starts at~1 and is
+promoted when the greedy policy solves at least a threshold fraction of freshly sampled states
+at exact distance~$K$; the network agent also trains on starts up to $K+2$.
+
+\paragraph{Tabular agent.}
+The table has one row per state. With learning rate $\alpha=1$ (the environment is
+deterministic), pessimistic initialisation at $-12$, an ``unknown-action-first'' behaviour
+policy and 8{,}192 parallel environments, the table reaches $100\%$ greedy success on random
+states, covers every state and drives the mean value error below $0.01$ in about two minutes
+($1.8\times10^8$ environment steps). This is the reference for all network experiments.
+
+\paragraph{Network agent.}
+The network is a multilayer perceptron that maps the 144-dimensional one-hot encoding of the 24
+stickers to nine action values. The main run uses hidden layers 1024--1024--512
+($1{,}727{,}497$ parameters), Adam with a cosine learning-rate schedule from $10^{-3}$ to
+$10^{-4}$, batches of 4{,}096 states, a target network refreshed every 200 updates, and
+all-actions targets $y(s,a) = -1 + \max_{a'} \Q^-(T(s,a),a')$ for every action of every sampled
+state \citep{agostinelli2019}. Promotion threshold $0.9$, one hour on an Apple M1~Max.
+A second run on an RTX~4090 uses hidden layers 2048--2048--1024 ($6.6$M parameters) for
+$5.3$~hours with threshold $0.97$. \todo{report update counts and throughput for both runs.}
+
+\section{Diagnostics}
+\label{sec:diagnostics}
+
+All diagnostics use the exact distance table and, where needed, the bitmap of states sampled
+during training (a state counts as sampled when it entered at least one update). Success means
+the greedy policy reaches the solved state within 30 moves.
+
+\paragraph{D1: seen/unseen split and steps-to-seen.}
+For each exact distance we sample states and report success separately for sampled and
+never-sampled states. If the network memorises, sampled states should be solved markedly more
+often. For every solved unseen state we also record how many greedy moves it takes before the
+path first enters a sampled state; a median of one or two means success on unseen states is
+mostly a step into memorised territory.
+
+\paragraph{D2: symmetry images.}
+With one cubie fixed, six whole-cube symmetries preserve the move set: the rotations about the
+diagonal through the fixed cubie ($U\!\to\!R\!\to\!F\!\to\!U$) and their compositions with a
+mirror that swaps $R$ and $F$ and reverses every turn. Each symmetry $\sigma$ induces a
+permutation $\pi$ of the nine moves and a map on states with
+$\sigma(T(s,m)) = T(\sigma(s),\pi(m))$ and $\sigma(\text{solved})=\text{solved}$. We construct
+$\sigma$ by BFS over the transition table and verify that it is an automorphism, so
+$\dist(\sigma(s)) = \dist(s)$ for every state. The image of a sampled state is a state the
+network never saw whose solution is the same solution with the moves renamed. If the network
+has learned the symmetry, images are solved as often as their originals; if it has memorised,
+images are solved as rarely as random unseen states at the same distance.
+
+\paragraph{D3: greedy versus beam.}
+The greedy policy commits to $\arg\max_a \Q(s,a)$ at every step. Beam search of width $w$ keeps
+the $w$ successor states with the highest $\max_a \Q$ at every depth, with the same network and
+no other information. The gap between the two measures how much of the value function's
+information the greedy policy discards: a large gap means the ranking of states is right in
+aggregate but not reliable one move at a time.
+
+\paragraph{D4: supervised capacity ceiling.}
+We remove reinforcement learning from the picture and train the same architecture with the
+same optimiser to predict an optimal action for $n$ uniformly random states, with the loss
+$-\log\sum_{a\in A^*(s)} p(a\mid s)$ over the set $A^*(s)$ of optimal actions (on average
+$2.28$ per state, so the chance level is $25.4\%$). Each $n$ gets the same budget of 6{,}000 Adam
+steps and stops early at $99.9\%$ fit. The largest $n$ fitted exactly is the architecture's
+memorisation ceiling; held-out accuracy and the greedy solve rate on random states show what the
+fit is worth as a policy.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{The network run}
+
+The main run's curriculum stalled at $K=7$: greedy success at distance~7 stayed near $52\%$
+against a threshold of $90\%$. Training sampled $29.9\%$ of all states. The larger 4090 run also
+stalled at $K=7$ with $78.8\%$ of states sampled, $30\%$ greedy success on random states and
+$12.6\%$ on never-sampled states. Table~\ref{tab:seen} gives the seen/unseen split of the main
+run; the greedy success on uniformly random states implied by it is about $16\%$
+(\todo{replace by the directly measured value}).
+
+\begin{table}[t]
+\centering\small
+\caption{D1 on the main run: greedy success and value error for sampled and never-sampled
+states at each exact distance (up to 4{,}000 states per distance). Distances 1--7 were sampled
+completely. Steps-to-seen: median number of greedy moves from a solved unseen state until the
+path enters a sampled state, and the share of solved unseen states needing three or more.}
+\label{tab:seen}
+\begin{tabular}{rrrrrrrr}
+\toprule
+& \multicolumn{2}{c}{sampled} & \multicolumn{2}{c}{never sampled} & \multicolumn{2}{c}{steps-to-seen} & value error \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+distance & share & success & share & success & median & $\ge3$ & sampled / unseen \\
+\midrule
+1--5 & 100\% & 100\% & -- & -- & -- & -- & 0.01--0.09 \\
+6  & 100\%  & 98.9\% & -- & -- & -- & -- & 0.43 \\
+7  & 100\%  & 52.3\% & -- & -- & -- & -- & 0.95 \\
+8  & 74\%   & 22.4\% & 26\%  & 17.3\% & 1 & 14\% & 0.60 / 0.58 \\
+9  & 8.7\%  & 8.4\%  & 91\%  & 9.9\%  & 2 & 22\% & 1.12 / 1.00 \\
+10 & 0.75\% & 0.0\%$^\dagger$ & 99\% & 5.9\% & 3 & 58\% & 3.66 / 2.05 \\
+11 & 5.7\%  & 0.0\%  & 94\%  & 1.6\%  & 4 & 97\% & 5.04 / 3.35 \\
+\bottomrule
+\multicolumn{8}{l}{\footnotesize $^\dagger$30 states.}
+\end{tabular}
+\end{table}
+
+\subsection{D1: seen and unseen states are solved equally often}
+
+At every distance where both groups exist, sampled and never-sampled states are solved at
+nearly the same rate ($22.4\%$ vs.\ $17.3\%$ at distance~8, $8.4\%$ vs.\ $9.9\%$ at distance~9)
+with nearly the same value error. Being sampled confers no advantage at depth. At distance~10
+the sampled states are solved \emph{less} often than unseen ones. Distance-10 states are never
+episode starts; the ones that get sampled are those an episode walked into from distance~9,
+that is, states the network misjudged as closer to the goal. The sampled set at depth is
+therefore a biased sample of the network's own errors.
+
+The steps-to-seen statistic shows that most solved unseen states at distances 8--9 enter
+sampled territory within one or two moves. This does not indicate memorisation, since $74\%$ of
+distance-8 states are sampled and a step into that set is unavoidable; at distance~10, $58\%$ of
+the solved unseen states take three or more moves before touching any sampled state.
+
+\subsection{D2: the network does not know the cube's symmetries}
+
+\begin{table}[t]
+\centering\small
+\caption{D2 on the main run: greedy success on sampled states, on their never-sampled symmetric
+images, and on random never-sampled states, 2{,}000 states per cell. Distances 1--7 have no
+unseen images because every state was sampled.}
+\label{tab:sym}
+\begin{tabular}{rrrrr}
+\toprule
+distance & sampled & symmetric images (unseen) & random unseen & image / random \\
+\midrule
+8  & 22.9\% & 18.1\% & 19.1\% & 1.0 \\
+9  & 12.0\% & 9.6\%  & 9.7\%  & 1.0 \\
+10 & 0.4\%  & 1.7\%  & 6.0\%  & 0.3 \\
+11 & 0.0\%$^\ddagger$ & 0.0\%$^\ddagger$ & 2.1\% & -- \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^\ddagger$158 and 103 states.}
+\end{tabular}
+\end{table}
+
+All five non-identity symmetries were verified as automorphisms of the transition graph.
+Table~\ref{tab:sym} shows that the symmetric images of sampled states are solved exactly as
+often as random unseen states at the same distance. A solution the network can produce for a
+state does not transfer to the same solution with the layers renamed. Since the one-hot sticker
+encoding does not make the symmetry explicit, a multilayer perceptron has no reason to become
+equivariant, and it did not.
+
+Together, D1 and D2 leave neither of the two usual explanations standing: the network does not
+store individual states, and it has not learned the group structure.
+
+\subsection{D3: the value function knows far more than the greedy policy shows}
+
+\begin{table}[t]
+\centering\small
+\caption{D3 on the main run: greedy versus beam search (width 32) with the same network.
+Greedy figures at distances 8--11 are the sampled/unseen averages of Table~\ref{tab:seen}.}
+\label{tab:beam}
+\begin{tabular}{rrr}
+\toprule
+distance & greedy & beam, width 32 \\
+\midrule
+$\le6$ & $\ge 98.9\%$ & 100\% \\
+7  & 52\%  & 100\% \\
+8  & 21\%  & 100\% \\
+9  & 10\%  & 92.5\% \\
+10 & 6\%   & 66.0\% \\
+11 & 2\%   & 40.5\% \\
+\midrule
+uniformly random state & $\approx16\%$ & 90.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Beam search of width~32 solves $90.3\%$ of uniformly random states, against about $16\%$ for
+the greedy policy, and $100\%$ of distance-8 states although a quarter of them were never
+sampled and distances 10--11 were never episode starts (Table~\ref{tab:beam}). The value
+function ranks states correctly in aggregate throughout the state space, including the $70\%$ it
+never sampled. What it lacks is precision: the true values of adjacent actions differ by
+exactly one move, the value error at distance~7 is $0.95$ moves, and a greedy choice between
+two actions whose estimates differ by less than the error is a coin flip. Beam search tolerates
+individual misrankings; greedy compounds them.
+
+\subsection{Why the curriculum stalls}
+
+The promotion criterion asks the greedy policy to solve $90\%$ of distance-7 states. Every
+distance-7 state was sampled and beam search solves all of them, so the network ``knows'' the
+region; greedy success there is $52\%$ because the value error equals the signal. The
+curriculum therefore never advances, distances 10--11 never become episode starts, and their
+values are extrapolated: the value error grows to $2$--$3.4$ moves and the network
+systematically underestimates the distance of deep states (Table~\ref{tab:seen}). The stall is
+self-locking, and it is a property of the promotion criterion, not of the network.
+
+\subsection{D4: capacity is not the bottleneck}
+
+\begin{table}[t]
+\centering\small
+\caption{D4: the main run's architecture (1.73M parameters, $\approx3.5$ Mbit at two bits per
+parameter; a full policy is $3{,}674{,}160\times\log_2 9 \approx 11.6$ Mbit) trained supervised on
+$n$ random states with 6{,}000 Adam steps each. Chance level for accuracy is $25.4\%$.}
+\label{tab:cap}
+\begin{tabular}{rrrrr}
+\toprule
+$n$ (states) & steps & fit & held-out & greedy solve, random states \\
+\midrule
+300{,}000   & 1{,}500 & 100.0\% & 29.4\% & 0.0\% \\
+1{,}000{,}000 & 6{,}000 & 92.2\% & 32.1\% & 4.5\% \\
+2{,}000{,}000 & 6{,}000 & 64.5\% & 39.8\% & 42.3\% \\
+3{,}674{,}160 & 6{,}000 & 56.1\% & -- & 79.2\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:cap} shows three things. First, the architecture can memorise, but only about
+$0.3$--$1$ million states: $300{,}000$ states are fitted exactly in 1{,}500 steps, and the
+fitted information ($\approx1$--$3$ Mbit) is consistent with the two-bits-per-parameter
+rule \citep{allenzhu2024}. What is memorised does not transfer: held-out accuracy at
+$n=300{,}000$ is at chance. Second, once $n$ exceeds the ceiling the network is forced to
+compress and starts to generalise: at $n=2$ million the fit drops to $64.5\%$ while held-out
+accuracy rises to $39.8\%$ and greedy solve rate jumps to $42\%$; on the full state space a
+per-state accuracy of $56\%$ yields $79\%$ greedy success, because most ``wrong'' actions keep
+the distance rather than increase it. Third, the same architecture that Q-learning brought to
+about $16\%$ greedy success in an hour reaches $79\%$ in two minutes when given clean targets.
+The bottleneck of the RL run is the learning signal, bootstrapped from the network's own
+noisy and non-stationary estimates, not the parameter count.
+
+\subsection{What a larger network buys}
+
+The 4090 run with four times the parameters raised greedy success on random states from about
+$16\%$ to $30\%$ and stalled at the same $K=7$. In the light of D3 and D4, parameters buy
+\emph{precision} of the value estimates: a smaller error lets the greedy policy survive a few
+more moves, but as long as the error is of the order of the one-move gap the promotion criterion
+is not met. Parameters do not buy per-state memory, which D1 shows the network does not use.
+
+\section{Discussion}
+
+\paragraph{What the network learned.}
+The three explanations in the introduction are each contradicted by one diagnostic, leaving a
+fourth: the value function is a smooth interpolant in the sticker representation. States that
+share many stickers receive similar values. This is enough for beam search to follow the
+gradient of the true distance across the whole state space, and not enough for one-move
+decisions near the resolution limit of the estimate. The network is neither a compressed table
+nor a solver; it is a heuristic of roughly one move's accuracy.
+
+\paragraph{Consequences for method design.}
+The promotion criterion of a reverse curriculum should not depend on the greedy policy when the
+value error is of the order of the action gap; one-step accuracy or search success are
+criteria that advance. If structural knowledge is wanted, the input representation, not the
+network size, is the lever: an encoding of cubie positions and orientations, or symmetry
+augmentation of every sample, makes the symmetries learnable; a wider MLP on stickers does not.
+
+\paragraph{Limitations.}
+Every configuration was run with a single seed. The main and 4090 runs differ in size, budget
+and threshold, so the comparison between them is qualitative. The greedy success on random
+states of the main run is inferred from the per-distance table rather than measured directly.
+All results are on one puzzle; the diagnostics are general, the conclusions are not yet.
+
+\paragraph{Planned experiments.}
+Three seeds per configuration; a width sweep from 256 to 4096 at a fixed number of updates with
+per-size learning rates; the supervised sweep over parameters and $n$ to map the boundary
+between memorising and generalising; a second exhaustively solvable domain; and the curriculum
+with a one-step or search-based promotion criterion, resumed from the stalled checkpoint.
+
+\section{Conclusion}
+
+On a puzzle where every state's optimal value is known, four cheap diagnostics show that a
+value network trained by Q-learning neither memorises its training states nor learns the
+puzzle's symmetries, that its value function is nevertheless informative over the entire state
+space, and that its failure to advance is a matter of precision and learning signal rather than
+capacity. Problems of this kind, exhaustively solvable yet too large for a network to store, are
+a useful place to ask what deep RL representations contain before scaling to problems where the
+question cannot be answered.
+
+\section*{Reproducibility}
+Code, the training monitor and the diagnostic scripts (\texttt{eval --seen}, \texttt{eval
+--beam}, \texttt{symmetry\_test.py}, \texttt{capacity.py}) are available at
+\todo{repository URL}. All runs are reproducible from the command lines in the appendix.
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{99}
+\providecommand{\natexlab}[1]{#1}
+% \todo{verify every entry before submission}
+\bibitem[Agostinelli et~al.(2019)]{agostinelli2019}
+F.~Agostinelli, S.~McAleer, A.~Shmakov, and P.~Baldi.
+\newblock Solving the Rubik's cube with deep reinforcement learning and search.
+\newblock \emph{Nature Machine Intelligence}, 1:356--363, 2019.
+
+\bibitem[Allen-Zhu and Li(2024)]{allenzhu2024}
+Z.~Allen-Zhu and Y.~Li.
+\newblock Physics of language models: Part 3.3, knowledge capacity scaling laws.
+\newblock \emph{arXiv:2404.05405}, 2024.
+
+\bibitem[Baum(1988)]{baum1988}
+E.~B. Baum.
+\newblock On the capabilities of multilayer perceptrons.
+\newblock \emph{Journal of Complexity}, 4(3):193--215, 1988.
+
+\bibitem[Cover(1965)]{cover1965}
+T.~M. Cover.
+\newblock Geometrical and statistical properties of systems of linear inequalities with applications in pattern recognition.
+\newblock \emph{IEEE Transactions on Electronic Computers}, EC-14(3):326--334, 1965.
+
+\bibitem[Florensa et~al.(2017)]{florensa2017}
+C.~Florensa, D.~Held, M.~Wulfmeier, M.~Zhang, and P.~Abbeel.
+\newblock Reverse curriculum generation for reinforcement learning.
+\newblock In \emph{Conference on Robot Learning}, 2017.
+
+\bibitem[Lyle et~al.(2022)]{lyle2022}
+C.~Lyle, M.~Rowland, and W.~Dabney.
+\newblock Understanding and preventing capacity loss in reinforcement learning.
+\newblock In \emph{International Conference on Learning Representations}, 2022.
+
+\bibitem[McAleer et~al.(2018)]{mcaleer2018}
+S.~McAleer, F.~Agostinelli, A.~Shmakov, and P.~Baldi.
+\newblock Solving the Rubik's cube with approximate policy iteration.
+\newblock In \emph{International Conference on Learning Representations}, 2019. (arXiv:1805.07470, 2018.)
+
+\bibitem[Morris et~al.(2025)]{morris2025}
+J.~X. Morris, C.~Sitawarin, C.~Guo, N.~Kokhlikyan, G.~E. Suh, A.~M. Rush, K.~Chaudhuri, and S.~Mahloujifar.
+\newblock How much do language models memorize?
+\newblock \emph{arXiv:2505.24832}, 2025.
+
+\bibitem[Nakkiran et~al.(2020)]{nakkiran2020}
+P.~Nakkiran, G.~Kaplun, Y.~Bansal, T.~Yang, B.~Barak, and I.~Sutskever.
+\newblock Deep double descent: Where bigger models and more data hurt.
+\newblock In \emph{International Conference on Learning Representations}, 2020.
+
+\bibitem[Nikishin et~al.(2022)]{nikishin2022}
+E.~Nikishin, M.~Schwarzer, P.~D'Oro, P.-L. Bacon, and A.~Courville.
+\newblock The primacy bias in deep reinforcement learning.
+\newblock In \emph{International Conference on Machine Learning}, 2022.
+
+\bibitem[Power et~al.(2022)]{power2022}
+A.~Power, Y.~Burda, H.~Edwards, I.~Babuschkin, and V.~Misra.
+\newblock Grokking: Generalization beyond overfitting on small algorithmic datasets.
+\newblock \emph{arXiv:2201.02177}, 2022.
+
+\bibitem[Sokar et~al.(2023)]{sokar2023}
+G.~Sokar, R.~Agarwal, P.~S. Castro, and U.~Evci.
+\newblock The dormant neuron phenomenon in deep reinforcement learning.
+\newblock In \emph{International Conference on Machine Learning}, 2023.
+
+\bibitem[Zhang et~al.(2017)]{zhang2017}
+C.~Zhang, S.~Bengio, M.~Hardt, B.~Recht, and O.~Vinyals.
+\newblock Understanding deep learning requires rethinking generalization.
+\newblock In \emph{International Conference on Learning Representations}, 2017.
+\end{thebibliography}
+
+\appendix
+\section{Hyperparameters and commands}
+
+\paragraph{Tabular agent.}
+\texttt{python play\_rubik.py train}: 8{,}192 environments, $\alpha=1$, $\gamma=1$,
+$\epsilon=0.1$, initial value $-12$ with clamp, promotion threshold $0.97$, episode cap 25,
+evaluation every 50 iterations. Reaches $K=11$ and $\ge99.9\%$ success and coverage in
+$1.8\times10^8$ environment steps, 127~s on the reference machine.
+
+\paragraph{Network agent, main run.}
+\texttt{python play\_rubik.py train --agent net --backend torch --tag main --batch 4096
+--minutes 60 --lr-final 1e-4 --promote 0.9}: layers 1024--1024--512, 64 parallel
+environments, all-actions targets, target network every 200 updates, curriculum margin 2,
+$\epsilon=0.1$, episode cap 25, evaluation every 50 updates. Apple M1~Max, PyTorch MPS.
+
+\paragraph{Diagnostics.}
+\texttt{eval --agent net --tag main --seen}, \texttt{eval --agent net --tag main --beam 32},
+\texttt{python symmetry\_test.py --tag main}, \texttt{python capacity.py --layers 1024,1024,512
+--n 300000,1000000,2000000,3674160 --steps 6000 --batch 8192}.
+
+\section{Constructing the symmetries}
+Let $\pi_\rho$ map move $(\ell, t)$ (layer $\ell\in\{U,R,F\}$, turn $t\in\{1,2,3\}$ quarter
+turns) to $(\ell+1 \bmod 3, t)$, and $\pi_\mu$ map it to $(\mathrm{swap}_{RF}(\ell), 4-t)$.
+Starting from $\sigma(\text{solved})=\text{solved}$, BFS over the transition table assigns
+$\sigma(T(s,m)) := T(\sigma(s),\pi(m))$ and checks every already-assigned value for consistency.
+All five non-identity elements of the group generated by $\pi_\rho$ and $\pi_\mu$ passed the
+check and preserve the BFS distance of every state.
+
+\end{document}
