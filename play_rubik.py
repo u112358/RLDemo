@@ -242,10 +242,15 @@ class Trainer:
         known = v > self.Q0
         coverage = float(known.mean())
         q_err = float(np.abs(v[known] + self.dist[sample][known]).mean()) if known.any() else None
+        seen_by_depth = []                    # share of the states at each distance with a learned value (20k sampled per depth)
+        for d in range(1, MAX_DEPTH + 1):
+            pool = self.by_depth[d]
+            pick = pool if pool.size <= 20000 else pool[self.rng.integers(pool.size, size=20000)]
+            seen_by_depth.append(float((self.Q[pick].max(axis=1) > self.Q0).mean()))
         rec = {
             'step': self.steps, 'time': round(time.time() - self.t0, 1), 'K': self.K,
             'episodes': self.episodes, 'solved': self.solved,
-            'coverage': coverage, 'q_error': q_err, 'success_random': succ_random,
+            'coverage': coverage, 'q_error': q_err, 'success_random': succ_random, 'seen_by_depth': seen_by_depth,
             'success_by_depth': succ, 'mean_len_by_depth': mean_len,
             'optimal_len_by_depth': list(range(1, MAX_DEPTH + 1)),
             'sps': round(self.steps / max(time.time() - self.t0, 1e-9)),

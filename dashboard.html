@@ -208,6 +208,8 @@
   const fmtInt = n => n.toLocaleString('en-US');
   const fmtCompact = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + 'K' : String(Math.round(n));
   const pct = x => (100 * x).toFixed(x >= 0.999 && x < 1 ? 2 : x < 0.01 ? 2 : 1) + '%';
+  // axis tick in percent: as many decimals as the tick spacing needs (0.25% steps -> 2 decimals)
+  const pctTick = (v, full, step) => full ? (100 * v).toFixed(2) + '%' : (100 * v).toFixed(step ? Math.max(0, Math.ceil(-Math.log10(100 * step) - 1e-9)) : 0) + '%';
   const fmtTime = s => s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor(s % 3600 / 60) + 'm' : s >= 60 ? Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's' : s.toFixed(0) + 's';
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
@@ -224,6 +226,8 @@
     ['solve', '--cyan', '随机状态解出率', '按 3,674,160 个状态的真实距离分布加权：每个距离 d 抽 400 个离复原正好 d 步的状态，贪心策略（每步选 Q 值最大的动作）30 步内复原的比例，再按各距离的状态数占比加权求和。它就是「随手打乱一个魔方，这个策略能解出来的概率」。'],
     ['cov', '--violet', 'Q 表覆盖率 / 已采样状态', 'Q 表智能体：在 20 万个随机状态里，最优动作的 Q 值已经被更新过（不再是初始值）的比例。网络智能体：训练里被采样进过更新的状态占全部状态的比例。'],
     ['unseen', '--green', '未见过状态解出率（泛化）', '只有网络智能体有。在随机抽的状态里挑出训练中从未采样过的那些（最多 2000 个），贪心 30 步内复原的比例。这是网络「没背过也会做」的部分。'],
+    ['seenD', '--violet', '按距离的已采样比例', '每个距离 d 的全部状态里，训练采样过的比例（Q 表：已学过的比例，每个距离抽 2 万个估计）。随机状态 92% 落在距离 8–10，所以看随机解出率时要看深层这几行，而不是浅层。'],
+    ['seenS', '--violet', '采样过状态的解出率', '只有网络智能体有。随机抽的状态里挑出训练采样过的（最多 2000 个），贪心 30 步内复原的比例。它和未见过解出率按已采样比例加权就是随机解出率。'],
     ['err', '--rose', '价值误差 |Q+d|', 'Q 值本应等于「离复原还差几步」的相反数。这里取 max_a Q(s,a) 与真实 BFS 距离 d(s) 之和的绝对值，在随机状态上求平均（Q 表只算已学过的状态），0 = 完美。'],
     ['loss', '--rose', '训练损失', '只有网络智能体有。最近 200 次梯度更新的 TD 误差均方（预测的 Q 与目标 −1 + max Q(s′) 的差）。'],
     ['thr', '--ink', '吞吐', 'upd/s = 每秒梯度更新次数（网络）；steps/s = 每秒环境转动次数。'],
@@ -275,7 +279,8 @@
     const ty = v => mode === 'log' ? Math.log10(Math.max(v, 1e-12)) : v;
     const X = x => L + (x - xMin) / (xMax - xMin) * pw;
     const Y = y => Tp + ph - (Math.min(yMax, Math.max(yMin, ty(y))) - yMin) / (yMax - yMin) * ph;
-    const tickLabel = v => mode === 'log' ? opts.fmt(Math.pow(10, v)) : opts.fmt(v);
+    const tickStep = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
+    const tickLabel = v => mode === 'log' ? opts.fmt(Math.pow(10, v)) : opts.fmt(v, false, tickStep);
     let g = '';
     for (const v of ticks) {
       const y = mode === 'log' ? Tp + ph - (v - yMin) / (yMax - yMin) * ph : Y(v);
@@ -335,16 +340,19 @@
   }
 
   // ---------- depth × progress heat map ----------
-  function heatChart(el, recs, cfg) {
-    const W = 1160, H = 250, L = 52, R = 70, Tp = 16, Bt = 30, n = 11;
+  function heatChart(el, recs, o) {
+    // o: {key, label, hue ('--cyan' | '--violet'), top ('--good' for the ≥ 90 % band)}
+    const W = 560, H = 250, L = 40, R = 58, Tp = 16, Bt = 30, n = 11;
     const pw = W - L - R, ph = H - Tp - Bt, rh = ph / n;
-    const cols = Math.min(160, recs.length);
+    const withData = recs.filter(r => Array.isArray(r[o.key]));
+    if (!withData.length) { el.innerHTML = `<div class="empty">这次运行的记录里还没有「${o.label}」：用当前代码重新训练（或 --resume）后才会记录。</div>`; return; }
+    const cols = Math.min(120, withData.length);
     const xOf = r => r[xKey], xMax = Math.max(1, xOf(recs[recs.length - 1]));
     // bin records by x
     const bins = Array.from({ length: cols }, () => ({ sum: new Array(n).fill(0), cnt: 0 }));
-    for (const r of recs) { const b = Math.min(cols - 1, Math.floor(xOf(r) / xMax * cols)); for (let d = 0; d < n; d++) bins[b].sum[d] += r.success_by_depth[d]; bins[b].cnt++; }
+    for (const r of withData) { const b = Math.min(cols - 1, Math.floor(xOf(r) / xMax * cols)); for (let d = 0; d < n; d++) bins[b].sum[d] += r[o.key][d]; bins[b].cnt++; }
     const c = hex => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-    const c0 = c(css('--panel-3')), c1 = c(css('--cyan')), c2 = c(css('--good'));
+    const c0 = c(css('--panel-3')), c1 = c(css(o.hue)), c2 = c(css(o.top || o.hue));
     const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
     const colour = v => { const rgb = v < 0.9 ? mix(c0, c1, Math.pow(v / 0.9, 0.7)) : mix(c1, c2, (v - 0.9) / 0.1); return `rgb(${rgb.join(',')})`; };
     let cells = '', cw = pw / cols;
@@ -352,22 +360,23 @@
       if (!b.cnt) return;
       for (let d = 0; d < n; d++) {
         const v = b.sum[d] / b.cnt, y = Tp + ph - (d + 1) * rh;
-        cells += `<rect x="${(L + i * cw).toFixed(1)}" y="${y.toFixed(1)}" width="${(cw + 0.4).toFixed(1)}" height="${(rh - 1).toFixed(1)}" fill="${colour(v)}"><title>距离 ${d + 1}：解出率 ${pct(v)}</title></rect>`;
+        cells += `<rect x="${(L + i * cw).toFixed(1)}" y="${y.toFixed(1)}" width="${(cw + 0.4).toFixed(1)}" height="${(rh - 1).toFixed(1)}" fill="${colour(v)}"><title>距离 ${d + 1}：${o.label} ${pct(v)}</title></rect>`;
       }
     });
     let g = '';
     for (let d = 1; d <= n; d++) g += `<text x="${L - 7}" y="${Tp + ph - (d - 0.5) * rh + 3.5}" text-anchor="end" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${d}</text>`;
-    const xt = 6;
+    const xt = 4;
     for (let i = 0; i <= xt; i++) { const v = xMax * i / xt, x = L + pw * i / xt; g += `<text x="${x}" y="${H - 9}" text-anchor="${i === 0 ? 'start' : i === xt ? 'end' : 'middle'}" font-size="10" fill="${css('--muted')}" font-family="${css('--mono')}">${fmtX(v)}</text>`; }
-    g += `<text x="${L}" y="${Tp - 5}" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">距离 d（离复原的最少步数）</text>`;
+    g += `<text x="${L}" y="${Tp - 5}" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">距离 d ↑</text>`;
+    g += `<text x="${W - R}" y="${Tp - 5}" text-anchor="end" font-size="9" fill="${css('--faint')}" font-family="${css('--mono')}">${xKey === 'time' ? '训练时间 →' : '环境步数 →'}</text>`;
     // curriculum front
     let kd = '';
     recs.forEach((r, i) => { const x = L + xOf(r) / xMax * pw, y = Tp + ph - r.K * rh; kd += (i === 0 ? `M${x} ${y}` : `H${x}V${y}`); });
     const kpath = `<path d="${kd}" fill="none" stroke="${css('--amber')}" stroke-width="2" stroke-dasharray="5 3"/>`;
     // colour scale
     let scale = '';
-    for (let i = 0; i < 20; i++) scale += `<rect x="${W - R + 22}" y="${Tp + ph - (i + 1) * ph / 20}" width="12" height="${ph / 20 + 0.5}" fill="${colour(i / 19)}"/>`;
-    scale += `<text x="${W - R + 40}" y="${Tp + 8}" font-size="9" fill="${css('--muted')}" font-family="${css('--mono')}">100%</text><text x="${W - R + 40}" y="${Tp + ph}" font-size="9" fill="${css('--muted')}" font-family="${css('--mono')}">0%</text>`;
+    for (let i = 0; i < 20; i++) scale += `<rect x="${W - R + 14}" y="${Tp + ph - (i + 1) * ph / 20}" width="10" height="${ph / 20 + 0.5}" fill="${colour(i / 19)}"/>`;
+    scale += `<text x="${W - R + 28}" y="${Tp + 8}" font-size="9" fill="${css('--muted')}" font-family="${css('--mono')}">100%</text><text x="${W - R + 28}" y="${Tp + ph}" font-size="9" fill="${css('--muted')}" font-family="${css('--mono')}">0%</text>`;
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${cells}${g}${kpath}${scale}</svg>`;
   }
 
@@ -408,10 +417,10 @@
 
   // ---------- chart cards ----------
   const CHARTS = [
-    { id: 'succ', title: '随机状态解出率', hue: '--cyan', desc: '随手打乱一个魔方，贪心策略 30 步内能复原的概率（按 367 万状态的距离分布加权）。虚线 = 课程升级时刻。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: (v, full) => (100 * v).toFixed(full ? 2 : 0) + '%', yTitle: '解出率' },
+    { id: 'succ', title: '随机状态解出率', hue: '--cyan', desc: '随手打乱一个魔方，贪心策略 30 步内能复原的概率（按 367 万状态的距离分布加权）。虚线 = 课程升级时刻。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '解出率' },
     { id: 'K', title: '课程深度 K', hue: '--amber', desc: '回合起点 = 复原态打乱 1…K 步。当前深度的解出率过了门槛就 +1，最深 11。', modes: ['fixed'], fixed: [0, 11], fixedTicks: 11, fmt: v => String(Math.round(v)), step: true, yTitle: 'K' },
-    { id: 'cov', title: 'Q 表覆盖率', hue: '--violet', desc: '至少更新过一次的状态 / 3,674,160。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: (v, full) => (100 * v).toFixed(full ? 2 : 0) + '%', yTitle: '状态比例' },
-    { id: 'unseen', title: '未见过状态解出率（泛化）', hue: '--green', desc: '训练里从未采样过的状态，贪心 30 步内能复原的比例。网络「没背过也会做」的部分。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: (v, full) => (100 * v).toFixed(full ? 2 : 0) + '%', yTitle: '解出率', net: true },
+    { id: 'cov', title: 'Q 表覆盖率', hue: '--violet', desc: '至少更新过一次的状态 / 3,674,160。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '状态比例' },
+    { id: 'unseen', title: '未见过 vs 采样过：解出率', hue: '--green', desc: '随机状态按「训练里采样过 / 从未采样过」拆开，各自贪心 30 步内能复原的比例。随机解出率 = 已采样比例 × 紫 + (1 − 已采样比例) × 绿。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '解出率', net: true },
     { id: 'err', title: '价值误差 |Q + d|', hue: '--rose', desc: '预测价值与真实距离的偏差（单位：步）。0 = Q 值完全等于负距离。', modes: ['auto', 'log'], fmt: (v, full) => full ? v.toFixed(3) : v >= 10 ? v.toFixed(0) : v.toFixed(v < 0.1 ? 3 : 2), yTitle: '步' },
     { id: 'loss', title: '训练损失', hue: '--rose', desc: '最近 200 次更新的 TD 误差均方。', modes: ['auto', 'log'], fmt: (v, full) => full ? v.toExponential(2) : v === 0 ? '0' : v >= 1 ? v.toFixed(1) : v.toExponential(0), yTitle: 'MSE', net: true },
   ];
@@ -425,7 +434,8 @@
       const ctl = c.modes.length > 1 ? `<div class="seg" data-chart="${c.id}">${c.modes.map(m => `<button type="button" data-mode="${m}" class="${m === mode ? 'on' : ''}">${{ auto: '纵轴自适应', fixed: '0–100%', log: '对数' }[m]}</button>`).join('')}</div>` : '';
       html += `<div class="card" style="--hue:var(${c.hue})"><div class="head"><div><h2><i class="dot" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(${c.hue});margin-right:8px;vertical-align:1px"></i>${c.title}</h2><p class="desc">${c.desc}</p></div><div class="ctl">${ctl}</div></div><div id="c_${c.id}"></div><div class="legend" id="lg_${c.id}"></div></div>`;
     }
-    html += `<div class="card wide"><div class="head"><div><h2>解出率 × 距离 × 训练进度</h2><p class="desc">每一列是一个时间片，每一行是一个距离 d：颜色越亮，离复原 d 步的状态解出率越高。橙色虚线是课程深度 K 的推进：看「会解的前沿」是不是跟着课程走。</p></div></div><div id="c_heat"></div></div>`;
+    html += `<div class="card" style="--hue:var(--cyan)"><div class="head"><div><h2><i class="dot" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--cyan);margin-right:8px;vertical-align:1px"></i>解出率 × 距离 × 训练进度</h2><p class="desc">每列一个时间片，每行一个距离 d：颜色越亮，离复原 d 步的状态解出率越高。橙色虚线 = 课程深度 K。这是「会解的前沿」。</p></div></div><div id="c_heat"></div><div class="legend"><span><i style="background:var(--cyan)"></i>解出率（每个距离抽 400 个）</span><span><i class="dash"></i>课程深度 K</span></div></div>`;
+    html += `<div class="card" style="--hue:var(--violet)"><div class="head"><div><h2><i class="dot" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--violet);margin-right:8px;vertical-align:1px"></i>${isNet ? '已采样比例' : '覆盖率'} × 距离 × 训练进度</h2><p class="desc">同样的坐标：每行是离复原 d 步的全部状态里，${isNet ? '训练采样过的' : 'Q 表已学过的'}比例。这是「背过的前沿」。两张图对着看：亮区重合 = 靠记忆；解出率亮而这里暗 = 靠推理。</p></div></div><div id="c_heatSeen"></div><div class="legend"><span><i style="background:var(--violet)"></i>${isNet ? '已采样状态 / 该距离的全部状态' : '已学过的状态 / 该距离的全部状态'}</span><span><i class="dash"></i>课程深度 K</span></div></div>`;
     html += `<div class="card wide"><div class="head"><div><h2>最新一次评估：按距离分解</h2><p class="desc">每个距离 d 抽 400 个离复原正好 d 步的状态，贪心走 30 步。柱下的小字是该距离的状态总数；橙色刻度 = 课程已经练到的深度。绿 ≥ 95%，青 ≥ 50%，红 < 50%。</p></div></div><div id="c_depth"></div><div class="tablewrap"><table id="depthTable"></table></div></div>`;
     box.innerHTML = html;
     box.querySelectorAll('.seg[data-chart] button').forEach(b => b.addEventListener('click', () => {
@@ -494,14 +504,16 @@
     $('lg_cov').innerHTML = `<span><i style="background:${col('--violet')}"></i>${isNet ? '训练里采样过的状态 / 3.67M' : '至少更新过一次的状态 / 3.67M'}</span><span><i class="dash"></i>课程升级 K</span>`;
     if (isNet) {
       const cc = $('c_cov').parentNode; cc.querySelector('h2').lastChild.textContent = '已采样状态'; cc.querySelector('.desc').textContent = '训练里被采样进过更新的状态 / 3,674,160。网络能解出的「见过」部分的上限。';
-      draw(C.unseen, [{ name: '未见过解出率', color: col('--green'), points: P('unseen_success') }, { name: '随机解出率', color: col('--cyan'), points: P('success_random') }]);
-      $('lg_unseen').innerHTML = `<span><i style="background:${col('--green')}"></i>从未采样过的状态</span><span><i style="background:${col('--cyan')}"></i>全部随机状态（对照）</span><span><i class="dash"></i>课程升级 K</span>`;
+      const hasSeen = recs.some(x => x.seen_success !== undefined && x.seen_success !== null);
+      draw(C.unseen, [{ name: '未见过解出率', color: col('--green'), points: P('unseen_success') }, { name: '随机解出率', color: col('--cyan'), points: P('success_random') }].concat(hasSeen ? [{ name: '已采样解出率', color: col('--violet'), points: P('seen_success') }] : []));
+      $('lg_unseen').innerHTML = `<span><i style="background:${col('--green')}"></i>从未采样过的状态</span><span><i style="background:${col('--cyan')}"></i>全部随机状态（对照）</span>${hasSeen ? `<span><i style="background:${col('--violet')}"></i>采样过的状态（≈ 背下来的部分）</span>` : ''}<span><i class="dash"></i>课程升级 K</span>`;
       draw(C.loss, [{ name: 'loss', color: col('--rose'), points: P('loss') }]);
       $('lg_loss').innerHTML = `<span><i style="background:${col('--rose')}"></i>TD 误差均方（最近 200 次更新）</span>`;
     }
     draw(C.err, [{ name: '|Q+d|', color: col('--rose'), points: P('q_error') }]);
     $('lg_err').innerHTML = `<span><i style="background:${col('--rose')}"></i>mean |max Q(s,·) + d(s)|，单位：步</span><span><i class="dash"></i>课程升级 K</span>`;
-    heatChart($('c_heat'), recs, cfg);
+    heatChart($('c_heat'), recs, { key: 'success_by_depth', label: '解出率', hue: '--cyan', top: '--good' });
+    heatChart($('c_heatSeen'), recs, { key: 'seen_by_depth', label: isNet ? '已采样比例' : '覆盖率', hue: '--violet', top: '--ink' });
     depthChart($('c_depth'), r.success_by_depth, r.mean_len_by_depth, r.K);
     let rows = '<tr><th>距离 d</th><th>状态数</th><th>占比</th><th>解出率</th><th class="bar"></th><th>平均步数</th><th>最优</th><th>多走</th></tr>';
     for (let d = 1; d <= 11; d++) {

@@ -248,12 +248,16 @@ class TorchNetTrainer:
         coverage = float(self.seen.mean())
         unseen = sample[~self.seen[sample]][:2000]
         unseen_success = float((greedy_rollout(self.qvalues, self.T, unseen) > 0).mean()) if unseen.size else None
+        seen_pick = sample[self.seen[sample]][:2000]
+        seen_success = float((greedy_rollout(self.qvalues, self.T, seen_pick) > 0).mean()) if seen_pick.size else None
+        # share of the states at each exact distance that training has sampled (the "memorised" front)
+        seen_by_depth = [float(self.seen[self.by_depth[d]].mean()) for d in range(1, MAX_DEPTH + 1)]
         loss = float(np.mean(self.losses[-200:])) if self.losses else None
         rec = {
             'step': self.steps, 'time': round(time.time() - self.t0, 1), 'K': self.K,
             'episodes': self.episodes, 'solved': self.solved, 'updates': self.updates,
             'coverage': coverage, 'q_error': q_err, 'success_random': succ_random,
-            'unseen_success': unseen_success, 'loss': loss,
+            'unseen_success': unseen_success, 'seen_success': seen_success, 'seen_by_depth': seen_by_depth, 'loss': loss,
             'success_by_depth': succ, 'mean_len_by_depth': mean_len,
             'optimal_len_by_depth': list(range(1, MAX_DEPTH + 1)),
             'sps': round(self.steps / max(time.time() - self.t0, 1e-9)),
