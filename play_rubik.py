@@ -297,12 +297,11 @@ class Serving:
         self.Q = self.policy = self.net = None
         self.records, self.config = [], {}
         self._packed, self._packed_at = None, 0.0
+        self._metrics_path, self._metrics_mtime = None, 0.0
         if trainer is None:
             pt = paths(agent)
-            if os.path.exists(pt['metrics']):
-                with open(pt['metrics']) as f:
-                    m = json.load(f)
-                self.records, self.config = m.get('records', []), m.get('config', {})
+            self._metrics_path = pt['metrics']
+            self._reload_metrics()
             if agent == 'net':
                 if os.path.exists(NET_PATH):
                     from qnet import MLP, qfunction
@@ -318,9 +317,25 @@ class Serving:
     def has_table(self):
         return self.trainer is not None or self.Q is not None or self.policy is not None or self.net is not None
 
+    def _reload_metrics(self):
+        """serve without a trainer: follow the metrics file of a run that is training in another process."""
+        try:
+            mtime = os.path.getmtime(self._metrics_path)
+        except OSError:
+            return
+        if mtime == self._metrics_mtime:
+            return
+        try:
+            with open(self._metrics_path) as f:
+                m = json.load(f)
+        except (OSError, ValueError):          # being written right now, keep the last good copy
+            return
+        self.records, self.config, self._metrics_mtime = m.get('records', []), m.get('config', {}), mtime
+
     def metrics(self):
         if self.trainer is not None:
             return {'config': CONFIG, 'records': self.trainer.metrics}
+        self._reload_metrics()
         return {'config': self.config, 'records': self.records}
 
     def _qrow(self, idx):
