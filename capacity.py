@@ -53,12 +53,14 @@ def main():
     opt[rb.SOLVED_INDEX] = True
     opt_t = torch.from_numpy(opt).to(device)
     feats = all_features(device)
-    T_t = torch.from_numpy(T).to(device)
+    T_t = torch.from_numpy(T.copy()).to(device)
     depth_weight = np.bincount(dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
     by_depth = [np.nonzero(dist == d)[0] for d in range(MAX_DEPTH + 1)]
+    chance = float(opt.sum(1).mean() / 9)          # picking a move at random is right this often (several moves can be optimal)
     n_params = sum(p.numel() for p in make_mlp(layers).parameters())
     print('device %s   MLP 144-%s-9   %s parameters   %.1f Mbit at 2 bit/param' % (device, '-'.join(map(str, layers)), format(n_params, ','), 2 * n_params / 1e6))
-    print('a full policy needs about %.1f Mbit (3,674,160 states × log2 9 bits)\n' % (rb.N_STATES * np.log2(9) / 1e6))
+    print('a full policy needs about %.1f Mbit (3,674,160 states × log2 9 bits)' % (rb.N_STATES * np.log2(9) / 1e6))
+    print('chance level for fit / held-out accuracy: %.1f%% (a random move is optimal this often)\n' % (100 * chance))
     print('%9s %7s %8s %9s %9s %10s %8s' % ('n states', 'steps', 'fit', 'held-out', 'solve', 'Mbit fit', 'time'))
 
     def accuracy(model, idx):
@@ -117,8 +119,8 @@ def main():
         ho = accuracy(model, held) if held.size else float('nan')
         sr = solve_rate(model)
         print('\r%9s %7d %7.2f%% %8.2f%% %8.2f%% %9.2f %7.0fs' % (format(n, ','), step, 100 * fit, 100 * ho, 100 * sr, fit * n * np.log2(9) / 1e6, time.time() - t0))
-    print('\nreading: fit near 100% = the architecture can memorise that many states; the largest such n is its ceiling.'
-          '\n         held-out well above 1/9 ≈ 11% (the guess rate) = supervised training generalises even where RL did not.')
+    print('\nreading: fit near 100%% = the architecture can memorise that many states; the largest such n is its ceiling.'
+          '\n         held-out well above the %.0f%% chance level = supervised training generalises even where RL did not.' % (100 * chance))
 
 
 if __name__ == '__main__':
