@@ -417,7 +417,7 @@
 
   // ---------- chart cards ----------
   const CHARTS = [
-    { id: 'succ', title: '随机状态解出率', hue: '--cyan', desc: '随手打乱一个魔方，贪心策略 30 步内能复原的概率（按 367 万状态的距离分布加权）。虚线 = 课程升级时刻。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '解出率' },
+    { id: 'succ', title: '随机状态解出率', hue: '--cyan', desc: '随手打乱一个魔方，30 步内能复原的概率（按 367 万状态的距离分布加权）。贪心和束搜索用的是同一个网络：差距 = 价值函数里有、贪心用不出来的部分。虚线 = 课程升级时刻。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '解出率' },
     { id: 'K', title: '课程深度 K', hue: '--amber', desc: '回合起点 = 复原态打乱 1…K 步。当前深度的解出率过了门槛就 +1，最深 11。', modes: ['fixed'], fixed: [0, 11], fixedTicks: 11, fmt: v => String(Math.round(v)), step: true, yTitle: 'K' },
     { id: 'cov', title: 'Q 表覆盖率', hue: '--violet', desc: '至少更新过一次的状态 / 3,674,160。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '状态比例' },
     { id: 'unseen', title: '未见过 vs 采样过：解出率', hue: '--green', desc: '随机状态按「训练里采样过 / 从未采样过」拆开，各自贪心 30 步内能复原的比例。随机解出率 = 已采样比例 × 紫 + (1 − 已采样比例) × 绿。', modes: ['auto', 'fixed'], fixed: [0, 1], fmt: pctTick, yTitle: '解出率', net: true },
@@ -496,8 +496,11 @@
       lineChart(el, series, Object.assign({ mode: modes[c.id], fixed: c.fixed, fixedTicks: c.fixedTicks, fmt: c.fmt, step: c.step, markers, yTitle: c.yTitle }, extra || {}));
     };
     const C = Object.fromEntries(CHARTS.map(c => [c.id, c]));
-    draw(C.succ, [{ name: '解出率', color: col('--cyan'), points: P('success_random'), area: true }], { markerLabels: true });
-    $('lg_succ').innerHTML = `<span><i style="background:${col('--cyan')}"></i>随机状态解出率</span><span><i class="dash"></i>课程升级 K</span>`;
+    const hasBeam = recs.some(x => x.beam_random !== undefined), hasOne = recs.some(x => x.onestep_random !== undefined);
+    draw(C.succ, [{ name: '贪心解出率', color: col('--cyan'), points: P('success_random'), area: true }]
+      .concat(hasBeam ? [{ name: '束搜索解出率', color: col('--green'), points: P('beam_random') }] : [])
+      .concat(hasOne ? [{ name: '单步准确率', color: col('--violet'), points: P('onestep_random') }] : []), { markerLabels: true });
+    $('lg_succ').innerHTML = `<span><i style="background:${col('--cyan')}"></i>贪心：每步选最高分</span>${hasBeam ? `<span><i style="background:${col('--green')}"></i>束搜索（宽度 ${r.beam_width || 8}）：同一个网络，保留多个候选</span>` : ''}${hasOne ? `<span><i style="background:${col('--violet')}"></i>单步准确率：贪心的一步是否让距离减 1</span>` : ''}<span><i class="dash"></i>课程升级 K</span>`;
     draw(C.K, [{ name: 'K', color: col('--amber'), points: P('K') }], { markers: [] });
     $('lg_K').innerHTML = `<span><i style="background:${col('--amber')}"></i>课程深度 K（阶梯：每次升级 +1）</span>`;
     draw(C.cov, [{ name: isNet ? '已采样' : '覆盖率', color: col('--violet'), points: P('coverage'), area: true }]);

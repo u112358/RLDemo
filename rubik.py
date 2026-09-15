@@ -365,3 +365,58 @@ if __name__ == '__main__':
     assert (dist >= 0).all() and hist.tolist() == [1, 9, 54, 321, 1847, 9992, 50136, 227536, 870072, 1887748, 623800, 2644]
     print('INIT is', int(dist[encode(INIT)]), 'moves from solved')
     print('ok')
+
+
+def cubies(states):
+    """(N,24) sticker states -> (cubie id per slot (N,8), orientation per slot (N,8))."""
+    return _cubies(np.atleast_2d(np.asarray(states, dtype=np.uint8)))
+
+
+# ---- whole-cube symmetries that keep the fixed cubie and the move set {U, R, F} ----
+def symmetry_move_perms():
+    """The six move permutations: identity, rho (U->R->F->U), rho^2, mu (mirror: R<->F, every turn
+    reversed), mu*rho, mu*rho^2.  Returns (6, 9) int64, index 0 = identity."""
+    layer, turn = np.arange(9) // 3, np.arange(9) % 3
+    rho = (layer + 1) % 3 * 3 + turn
+    mu = np.array([0, 2, 1])[layer] * 3 + (2 - turn)
+    comp = lambda a, b: a[b]
+    return np.stack([np.arange(9), rho, comp(rho, rho), mu, comp(mu, rho), comp(mu, comp(rho, rho))])
+
+
+def build_symmetry(T, perm):
+    """State map sigma with sigma(T[s, m]) = T[sigma(s), perm[m]] and sigma(solved) = solved,
+    built by BFS from the solved state.  Raises ValueError if perm is not an automorphism."""
+    N = T.shape[0]
+    sigma = np.full(N, -1, dtype=np.int64)
+    sigma[SOLVED_INDEX] = SOLVED_INDEX
+    frontier = np.array([SOLVED_INDEX])
+    while frontier.size:
+        new = []
+        for m in range(9):
+            nxt = T[frontier, m]
+            img = T[sigma[frontier], perm[m]]
+            fresh = sigma[nxt] < 0
+            if fresh.any():
+                u, first = np.unique(nxt[fresh], return_index=True)
+                sigma[u] = img[fresh][first]
+                new.append(u)
+            if not np.array_equal(sigma[nxt], img):
+                raise ValueError('not a symmetry of the state graph')
+        frontier = np.unique(np.concatenate(new)) if new else np.array([], dtype=np.int64)
+    assert (sigma >= 0).all()
+    return sigma
+
+
+def symmetries(T=None, cache_dir='cache'):
+    """(6, N_STATES) int32: state maps of the six symmetries (row 0 = identity), cached on disk.
+    Every row preserves the BFS distance of every state."""
+    path = os.path.join(cache_dir, 'symmetries.npy')
+    if os.path.exists(path):
+        return np.load(path, mmap_mode='r')
+    if T is None:
+        T = transitions(cache_dir)
+    perms = symmetry_move_perms()
+    sig = np.stack([build_symmetry(T, p) for p in perms]).astype(np.int32)
+    os.makedirs(cache_dir, exist_ok=True)
+    np.save(path, sig)
+    return sig

@@ -305,9 +305,8 @@ class Serving:
                 self.records, self.config = m.get('records', []), m.get('config', {})
             if agent == 'net':
                 if os.path.exists(NET_PATH):
-                    from qnet import MLP, onehot
-                    net = MLP.from_file(NET_PATH)
-                    self.net = lambda idx: net.forward(onehot(idx))
+                    from qnet import MLP, qfunction
+                    self.net = qfunction(MLP.from_file(NET_PATH))
                 if os.path.exists(NET_POLICY_PATH):
                     self.policy = np.load(NET_POLICY_PATH, mmap_mode='r')
             else:
@@ -479,6 +478,7 @@ class Progress:
         self.args, self.tr, self.plain, self.t0 = args, tr, plain, time.time()
         self.max_k = tr_max_k(tr)
         self.start_steps = tr.steps
+        self.start_updates = getattr(tr, 'updates', 0)
         self.drawn = 0                     # lines of the panel currently on screen
         self.prev_k = tr.K
         self.hist = {'success_random': [], 'unseen_success': [], 'coverage': [], 'q_error': [], 'loss': []}
@@ -532,7 +532,11 @@ class Progress:
     def header_segs(self, rec):
         a = self.args
         if self.is_net and a.backend == 'torch':
-            who = 'net/torch %s · %s' % (rec.get('device', ''), '-'.join(map(str, [144] + list(self.tr.layers) + [9])))
+            who = 'net/torch %s · %s · %s' % (rec.get('device', ''), '-'.join(map(str, [self.tr.n_in] + list(self.tr.layers) + [9])), a.features)
+            if a.symmetry_aug:
+                who += ' · sym-aug'
+            if a.promote_by != 'greedy':
+                who += ' · promote by ' + a.promote_by
         elif self.is_net:
             who = 'net/numpy · 144-%d-%d-9' % (a.hidden, a.hidden)
         else:
@@ -544,7 +548,12 @@ class Progress:
     def bar_segs(self, rec):
         a = self.args
         elapsed = time.time() - self.t0
-        if a.minutes:
+        if getattr(a, 'updates', 0):
+            done_upd = rec.get('updates', 0) - self.start_updates
+            frac = min(1.0, done_upd / a.updates)
+            eta = (a.updates - done_upd) * elapsed / max(done_upd, 1)
+            budget = '更新预算 %s' % format(a.updates, ',')
+        elif a.minutes:
             frac, eta = min(1.0, elapsed / (60 * a.minutes)), 60 * a.minutes - elapsed
             budget = '时长预算 %d min' % a.minutes
         else:
@@ -683,7 +692,7 @@ def train(args):
     if args.updates_per_step is None:
         args.updates_per_step = 1 if torch_backend else 4
     if args.steps is None:
-        args.steps = 10 ** 15 if args.minutes else (40_000_000 if args.agent == 'net' else 400_000_000)
+        args.steps = 10 ** 15 if (args.minutes or args.updates) else (40_000_000 if args.agent == 'net' else 400_000_000)
     if args.agent == 'net' and args.eval_every == 50:
         args.eval_every = 50 if torch_backend else 200      # an evaluation costs ~0.7 s with the numpy network
     CONFIG = {k: v for k, v in vars(args).items() if k != 'cmd'}
@@ -695,11 +704,15 @@ def train(args):
                              weight_by_depth=args.weight_by_depth, promote=args.promote, max_k=args.max_k,
                              k_start=args.k_start, target_every=args.target_every, n_envs=args.envs, eps=args.eps,
                              episode_cap=args.cap, buffer=args.buffer, updates_per_step=args.updates_per_step, seed=args.seed,
-                             amp=args.amp)
-        print('torch network agent on %s: %s MLP, batch %d, %s targets, curriculum margin %d'
-              % (tr.device, '-'.join(map(str, [24 * 6] + tr.layers + [9])), args.batch,
-                 'replay Q-learning' if args.replay else 'all-actions', args.k_margin))
+                             amp=args.amp, features=args.features, promote_by=args.promote_by,
+                             symmetry_aug=args.symmetry_aug, beam_width=args.beam_width)
+        print('torch network agent on %s: %s MLP (%s features), batch %d, %s targets, curriculum margin %d, promote by %s%s'
+              % (tr.device, '-'.join(map(str, [tr.n_in] + tr.layers + [9])), args.features, args.batch,
+                 'replay Q-learning' if args.replay else 'all-actions', args.k_margin, args.promote_by,
+                 ', symmetry augmentation' if args.symmetry_aug else ''))
     elif args.agent == 'net':
+        if args.features != 'sticker' or args.symmetry_aug or args.promote_by != 'greedy' or args.updates:
+            raise SystemExit('--features cubie, --symmetry-aug, --promote-by and --updates need --backend torch')
         from qnet import NetTrainer
         tr = NetTrainer(n_envs=args.envs, gamma=args.gamma, eps=args.eps, promote=args.promote, episode_cap=args.cap,
                         seed=args.seed, hidden=args.hidden, lr=args.lr, batch=args.batch, buffer=args.buffer,
@@ -733,17 +746,19 @@ def train(args):
         serve(args.dashboard, Serving(tr, args.agent))
     progress = Progress(args, tr, plain=args.plain or not enable_ansi())
     progress.legend()
-    run_start, start_steps = time.time(), tr.steps    # --minutes and --steps count this process only, also after --resume
-    progress.log('开始训练  ' + ('时长预算 %d 分钟' % args.minutes if args.minutes else '步数预算 %s' % format(args.steps, ','))
+    run_start, start_steps, start_updates = time.time(), tr.steps, getattr(tr, 'updates', 0)   # budgets count this process only, also after --resume
+    progress.log('开始训练  ' + ('更新次数预算 %s' % format(args.updates, ',') if args.updates else '时长预算 %d 分钟' % args.minutes if args.minutes else '步数预算 %s' % format(args.steps, ','))
                  + '  每 %d 次迭代评估一次' % args.eval_every + ('  · 从 K=%d 续训' % tr.K if args.resume else ''))
     i = 0
     try:
-        while tr.steps - start_steps < args.steps and not (args.minutes and time.time() - run_start > 60 * args.minutes):
+        while (tr.steps - start_steps < args.steps and not (args.minutes and time.time() - run_start > 60 * args.minutes)
+               and not (args.updates and getattr(tr, 'updates', 0) - start_updates >= args.updates)):
             tr.step()
             i += 1
             if i % args.eval_every == 0:
-                if args.lr_final is not None and args.minutes:
-                    frac = min(1.0, (time.time() - run_start) / (60 * args.minutes))
+                if args.lr_final is not None and (args.minutes or args.updates):
+                    frac = min(1.0, (getattr(tr, 'updates', 0) - start_updates) / args.updates) if args.updates \
+                        else min(1.0, (time.time() - run_start) / (60 * args.minutes))
                     tr.set_lr(args.lr_final + 0.5 * (args.lr - args.lr_final) * (1 + np.cos(np.pi * frac)))
                 rec = tr.evaluate()
                 progress.show(rec)
@@ -825,9 +840,8 @@ def solve(args):
     if args.beam:
         if args.agent != 'net' or not os.path.exists(NET_PATH):
             sys.exit('--beam needs the network agent (cache/net.npz)')
-        from qnet import MLP, onehot
-        net = MLP.from_file(NET_PATH)
-        moves = beam_solve(lambda i: net.forward(onehot(i)), rb.transitions(), idx, width=args.beam)
+        from qnet import MLP, qfunction
+        moves = beam_solve(qfunction(MLP.from_file(NET_PATH)), rb.transitions(), idx, width=args.beam)
         if moves is None:
             print('beam search (width %d) found no solution within 30 moves' % args.beam)
             return
@@ -875,11 +889,11 @@ def evaluate(args):
 def evaluate_net(args):
     if not os.path.exists(NET_PATH):
         sys.exit('no trained network in %s/ - run: python play_rubik.py train --agent net' % CACHE)
-    from qnet import MLP, onehot
+    from qnet import MLP, qfunction
     T = np.ascontiguousarray(rb.transitions())
     dist = rb.bfs_distances(T)
     net = MLP.from_file(NET_PATH)
-    qf = lambda idx: net.forward(onehot(idx))
+    qf = qfunction(net)
     rng = np.random.default_rng(args.seed)
     rec = {'success_by_depth': [], 'mean_len_by_depth': []}
     weight = np.bincount(dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
@@ -973,6 +987,11 @@ def main():
     t.add_argument('--buffer', type=int, default=200000, help='net: replay buffer size')
     t.add_argument('--target-every', type=int, default=None, help='net: target network refresh in updates (default 1000 numpy / 200 torch)')
     t.add_argument('--max-k', type=int, default=MAX_DEPTH, help='net: cap the curriculum depth (train shallow, test deep)')
+    t.add_argument('--updates', type=int, default=0, help='torch: stop after this many gradient updates (compute-matched budget)')
+    t.add_argument('--features', choices=['sticker', 'cubie'], default='sticker', help='torch: network input, raw stickers (144) or cubie position + twist per slot (70)')
+    t.add_argument('--promote-by', choices=['greedy', 'onestep', 'beam'], default='greedy', help='torch: curriculum criterion at depth K: greedy solve rate, one-step accuracy, or beam-search solve rate')
+    t.add_argument('--symmetry-aug', action='store_true', help='torch: replace every training sample by a random symmetric image (targets renamed to match)')
+    t.add_argument('--beam-width', type=int, default=8, help='torch: beam width for the beam metric and --promote-by beam')
     e = sub.add_parser('eval')
     e.add_argument('--seed', type=int, default=0)
     e.add_argument('--agent', choices=['table', 'net'], default='table')

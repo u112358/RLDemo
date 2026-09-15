@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 
 import rubik as rb
-from qnet import MAX_DEPTH, N_IN
+from qnet import MAX_DEPTH, N_IN, FEATURE_DIMS, features as np_features
 
 
 def pick_device(name='auto'):
@@ -37,20 +37,19 @@ def pick_device(name='auto'):
     return torch.device('cpu')
 
 
-def all_features(device, chunk=200000):
-    """(N_STATES, 144) uint8 one-hot of every state, on the device."""
-    feats = torch.empty((rb.N_STATES, N_IN), dtype=torch.uint8, device=device)
+def all_features(device, kind='sticker', chunk=200000):
+    """(N_STATES, n_in) uint8 features of every state, on the device.
+    kind: 'sticker' (144: one-hot of the 24 sticker colours) or 'cubie' (70: per slot, which cubie and its twist)."""
+    n_in = FEATURE_DIMS[kind]
+    feats = torch.empty((rb.N_STATES, n_in), dtype=torch.uint8, device=device)
     for lo in range(0, rb.N_STATES, chunk):
         hi = min(lo + chunk, rb.N_STATES)
-        states = rb.decode(np.arange(lo, hi))
-        X = np.zeros((hi - lo, N_IN), dtype=np.uint8)
-        X[np.arange(hi - lo)[:, None], np.arange(24)[None, :] * 6 + states] = 1
-        feats[lo:hi] = torch.from_numpy(X).to(device)
+        feats[lo:hi] = torch.from_numpy(np_features(np.arange(lo, hi), kind).astype(np.uint8)).to(device)
     return feats
 
 
-def make_mlp(layers):
-    sizes = [N_IN] + list(layers) + [9]
+def make_mlp(layers, n_in=N_IN):
+    sizes = [n_in] + list(layers) + [9]
     mods = []
     for i, (a, b) in enumerate(zip(sizes[:-1], sizes[1:])):
         mods.append(nn.Linear(a, b))
@@ -74,7 +73,7 @@ class TorchNetTrainer:
     def __init__(self, layers=(1024, 1024, 512), lr=1e-3, batch=8192, device='auto', all_actions=True,
                  k_margin=2, weight_by_depth=False, promote=0.97, max_k=MAX_DEPTH, k_start=1,
                  target_every=200, n_envs=64, eps=0.1, episode_cap=25, buffer=500000, updates_per_step=1,
-                 seed=0, amp=False):
+                 seed=0, amp=False, features='sticker', promote_by='greedy', symmetry_aug=False, beam_width=8):
         torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
         self.device = pick_device(device)
@@ -89,9 +88,19 @@ class TorchNetTrainer:
         self.by_depth = [np.nonzero(self.dist == d)[0] for d in range(MAX_DEPTH + 1)]
         self.depth_weight = np.bincount(self.dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
         self.T_t = torch.from_numpy(self.T.astype(np.int64)).to(self.device)
-        self.feats = all_features(self.device)
-        self.net = make_mlp(layers).to(self.device)
-        self.target = make_mlp(layers).to(self.device)
+        self.features, self.n_in = features, FEATURE_DIMS[features]
+        self.feats = all_features(self.device, features)
+        self.net = make_mlp(layers, self.n_in).to(self.device)
+        self.target = make_mlp(layers, self.n_in).to(self.device)
+        self.promote_by, self.beam_width = promote_by, beam_width
+        self.symmetry_aug = bool(symmetry_aug)
+        if self.symmetry_aug:
+            # state maps of the 6 symmetries and, per symmetry, the inverse move permutation:
+            # Q(sigma(s), pi(m)) = Q(s, m)  =>  target row of sigma(s) = target row of s indexed by pi^-1
+            sig = np.asarray(rb.symmetries(self.T))
+            self.sym_t = torch.from_numpy(sig.astype(np.int64)).to(self.device)          # (6, N)
+            perms = rb.symmetry_move_perms()
+            self.sym_inv_t = torch.from_numpy(np.argsort(perms, axis=1)).to(self.device)  # (6, 9)
         self.target.load_state_dict(self.net.state_dict())
         self.opt = torch.optim.Adam(self.net.parameters(), lr=lr)
         self.layers = list(layers)
@@ -230,9 +239,15 @@ class TorchNetTrainer:
         B = self.batch
         depths = torch.randint(1, self._depth_hi(self.k_margin), (B,), device=self.device)
         s = self._scramble_t(depths)
-        self.seen[s.cpu().numpy()] = True          # every sampled training state counts as seen
         children = self.T_t[s]                              # (B, 9)
         target = self._targets(children, B)
+        if self.symmetry_aug:
+            # replace each sample by a random symmetric image (1/6 stays itself): same compute,
+            # but the training distribution becomes symmetric and the target rows are renamed to match
+            which = torch.randint(6, (B,), device=self.device)
+            s = self.sym_t[which, s]
+            target = target.gather(1, self.sym_inv_t[which])
+        self.seen[s.cpu().numpy()] = True          # every state that enters an update counts as seen
         with torch.enable_grad():
             q = self._q(s)
         w = (1.0 / depths.float()) if self.weight_by_depth else torch.ones(B, device=self.device)
@@ -250,7 +265,7 @@ class TorchNetTrainer:
     @gpu_locked
     def evaluate(self, n_per_depth=400, sample_states=20000):
         from play_rubik import greedy_rollout
-        succ, mean_len = [], []
+        succ, mean_len, onestep, beam = [], [], [], []
         for d in range(1, MAX_DEPTH + 1):
             pool = self.by_depth[d]
             pick = pool[self.rng.integers(pool.shape[0], size=min(n_per_depth, pool.shape[0]))]
@@ -258,7 +273,12 @@ class TorchNetTrainer:
             ok = length > 0
             succ.append(float(ok.mean()))
             mean_len.append(float(length[ok].mean()) if ok.any() else None)
-        succ_random = float(sum(self.depth_weight[d] * succ[d - 1] for d in range(1, MAX_DEPTH + 1)) + self.depth_weight[0])
+            # one-step accuracy: does the greedy move bring the state one step closer?
+            a = self.qvalues(pick).argmax(1)
+            onestep.append(float((self.dist[self.T[pick, a]] == d - 1).mean()))
+            beam.append(float(self.beam_success(pick[:n_per_depth // 4], self.beam_width).mean()))
+        weighted = lambda per_d: float(sum(self.depth_weight[d] * per_d[d - 1] for d in range(1, MAX_DEPTH + 1)) + self.depth_weight[0])
+        succ_random, onestep_random, beam_random = weighted(succ), weighted(onestep), weighted(beam)
         sample = self.rng.integers(rb.N_STATES, size=sample_states)
         v = self.qvalues(sample).max(axis=1)
         q_err = float(np.abs(v + self.dist[sample]).mean())
@@ -276,14 +296,47 @@ class TorchNetTrainer:
             'coverage': coverage, 'q_error': q_err, 'success_random': succ_random,
             'unseen_success': unseen_success, 'seen_success': seen_success, 'seen_by_depth': seen_by_depth, 'loss': loss,
             'success_by_depth': succ, 'mean_len_by_depth': mean_len,
+            'onestep_by_depth': onestep, 'onestep_random': onestep_random,
+            'beam_by_depth': beam, 'beam_random': beam_random, 'beam_width': self.beam_width,
             'optimal_len_by_depth': list(range(1, MAX_DEPTH + 1)),
             'sps': round(self.steps / max(time.time() - self.t0, 1e-9)),
             'device': str(self.device), 'lr': self.lr(),
         }
         self.metrics.append(rec)
-        if self.K < self.max_k and succ[self.K - 1] >= self.promote:
+        crit = {'greedy': succ, 'onestep': onestep, 'beam': beam}[self.promote_by]
+        if self.K < self.max_k and crit[self.K - 1] >= self.promote:
             self.K += 1
         return rec
+
+    @gpu_locked
+    def beam_success(self, starts, width=8, max_depth=16):
+        """Batched beam search on the value function: for each start state keep the ``width``
+        successors with the highest max_a Q; solved if any candidate reaches the solved state
+        within ``max_depth`` moves.  Returns a bool array."""
+        starts = np.asarray(starts, dtype=np.int64)
+        n = starts.shape[0]
+        if n == 0:
+            return np.zeros(0, dtype=bool)
+        with torch.no_grad():
+            cand = torch.from_numpy(starts).to(self.device)[:, None]            # (n, w)
+            solved = (cand[:, 0] == rb.SOLVED_INDEX).clone()
+            for _ in range(max_depth):
+                w = cand.shape[1]
+                nxt = self.T_t[cand].reshape(n, w * 9)                           # (n, w*9)
+                hit = (nxt == rb.SOLVED_INDEX).any(1)
+                solved |= hit
+                if bool(solved.all()):
+                    break
+                v = self._q(nxt.reshape(-1)).max(1).values.reshape(n, w * 9)
+                # de-duplicate within a row: keep the first occurrence of each state
+                srt, order = nxt.sort(1)
+                dup = torch.zeros_like(nxt, dtype=torch.bool)
+                dup[:, 1:] = srt[:, 1:] == srt[:, :-1]
+                v = v.scatter(1, order, torch.where(dup, torch.full_like(v, -1e9), v.gather(1, order)))
+                k = min(width, w * 9)
+                top = v.topk(k, dim=1).indices
+                cand = nxt.gather(1, top)
+        return solved.cpu().numpy()
 
     @gpu_locked
     def full_policy(self, chunk=262144):
@@ -300,8 +353,8 @@ class TorchNetTrainer:
         """Load weights saved by ``save`` (numpy MLP format); the sizes must match ``--layers``."""
         z = np.load(net_path)
         sizes = z['sizes'].tolist()
-        if sizes != [N_IN] + self.layers + [9]:
-            raise SystemExit('saved network is %s but --layers gives %s' % ('-'.join(map(str, sizes)), '-'.join(map(str, [N_IN] + self.layers + [9]))))
+        if sizes != [self.n_in] + self.layers + [9]:
+            raise SystemExit('saved network is %s but --layers / --features give %s' % ('-'.join(map(str, sizes)), '-'.join(map(str, [self.n_in] + self.layers + [9]))))
         lin = [m for m in self.net if isinstance(m, nn.Linear)]
         n = len(lin)
         with torch.no_grad():
@@ -316,7 +369,7 @@ class TorchNetTrainer:
         lin = [m for m in self.net if isinstance(m, nn.Linear)]
         W = [m.weight.detach().cpu().numpy().T.astype(np.float32).copy() for m in lin]
         b = [m.bias.detach().cpu().numpy().astype(np.float32).copy() for m in lin]
-        np.savez(net_path, *(W + b), sizes=np.array([N_IN] + self.layers + [9]))
+        np.savez(net_path, *(W + b), sizes=np.array([self.n_in] + self.layers + [9]))
         pol = self.full_policy()
         np.save(policy_path, pol)
         self.policy_cache = pol

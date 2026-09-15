@@ -199,6 +199,27 @@ saw whose solution is the same solution renamed. Images solved as often as the
 originals means the network learned the structure; images solved as rarely as
 random unseen states means it memorised.
 
+### Interventions, one at a time
+
+The diagnostics point at three levers. Each is a switch on the torch backend, so they can be
+compared against the same baseline with the same seed and the same number of gradient updates:
+
+```bash
+bash run_matrix.sh            # base, onestep, beam, cubie, symaug; then python compare.py m_base m_onestep ...
+```
+
+| switch | what changes | tests |
+|---|---|---|
+| `--promote-by onestep` / `beam` | the curriculum advances on one-step accuracy or beam-search success at depth K instead of greedy success | whether the stall at K=7 is the criterion |
+| `--features cubie` | input = per slot, which cubie and its twist (70 dims) instead of raw stickers (144) | whether the representation limits what is learnable |
+| `--symmetry-aug` | every training sample is replaced by a random one of its 6 symmetric images, targets renamed to match (same compute) | whether the network can be made symmetry-aware |
+| `--updates N` | budget in gradient updates rather than minutes | compute-matched comparisons |
+
+Every evaluation now also records the beam-search solve rate (width `--beam-width`, default 8)
+and the one-step accuracy, shown on the dashboard next to the greedy curve.
+`capacity.py --subset cache/main/net_seen.npy` trains supervised only on the states the RL run
+sampled, separating the effect of data coverage from that of the learning signal.
+
 `capacity.py` trains the same architecture supervised on the BFS-optimal
 actions of n random states with a fixed optimiser budget and reports the fit,
 held-out accuracy and greedy solve rate. The largest n it fits is the

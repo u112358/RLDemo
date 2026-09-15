@@ -22,6 +22,10 @@ MAX_DEPTH = 11
 N_IN = 24 * 6
 
 
+N_IN_CUBIE = 7 * (7 + 3)        # per movable slot: which of the 7 cubies sits there (7) and its twist (3)
+FEATURE_DIMS = {'sticker': N_IN, 'cubie': N_IN_CUBIE}
+
+
 def onehot(idx):
     """State indices -> (N, 144) float32 one-hot of the 24 sticker colours."""
     states = rb.decode(np.asarray(idx, dtype=np.int64))
@@ -29,6 +33,36 @@ def onehot(idx):
     X = np.zeros((n, N_IN), dtype=np.float32)
     X[np.arange(n)[:, None], np.arange(24)[None, :] * 6 + states] = 1.0
     return X
+
+
+def cubie_onehot(idx):
+    """State indices -> (N, 70) float32: for each of the 7 movable slots, one-hot of the cubie in it
+    and one-hot of its orientation.  Makes the piece structure explicit instead of raw stickers."""
+    states = rb.decode(np.asarray(idx, dtype=np.int64))
+    cid, ori = rb.cubies(states)
+    n = states.shape[0]
+    X = np.zeros((n, N_IN_CUBIE), dtype=np.float32)
+    rows = np.arange(n)[:, None]
+    X[rows, np.arange(7)[None, :] * 10 + cid[:, :7]] = 1.0
+    X[rows, np.arange(7)[None, :] * 10 + 7 + ori[:, :7]] = 1.0
+    return X
+
+
+def features(idx, kind='sticker'):
+    return onehot(idx) if kind == 'sticker' else cubie_onehot(idx)
+
+
+def feature_kind(n_in):
+    for k, v in FEATURE_DIMS.items():
+        if v == n_in:
+            return k
+    raise ValueError('unknown feature width %d' % n_in)
+
+
+def qfunction(net):
+    """idx -> (n, 9) Q-values for a saved MLP, picking the feature kind from its input width."""
+    kind = feature_kind(net.W[0].shape[0])
+    return lambda idx: net.forward(features(idx, kind))
 
 
 class MLP:

@@ -33,6 +33,8 @@ MAX_DEPTH = 11
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--layers', default='1024,1024,512')
+    ap.add_argument('--features', choices=['sticker', 'cubie'], default='sticker')
+    ap.add_argument('--subset', default='', help='packed seen bitmap (cache/<tag>/net_seen.npy): draw the training states only from it')
     ap.add_argument('--n', default='100000,300000,1000000,3674160', help='training-set sizes (states)')
     ap.add_argument('--steps', type=int, default=6000, help='Adam steps per training-set size')
     ap.add_argument('--eval-every', type=int, default=250)
@@ -52,13 +54,17 @@ def main():
     opt = dist[T] == (dist[:, None] - 1)
     opt[rb.SOLVED_INDEX] = True
     opt_t = torch.from_numpy(opt).to(device)
-    feats = all_features(device)
+    feats = all_features(device, args.features)
+    n_in = feats.shape[1]
+    subset = np.nonzero(np.unpackbits(np.load(args.subset))[:rb.N_STATES].astype(bool))[0] if args.subset else None
+    if subset is not None:
+        print('training states drawn from %s: %s states (%.2f%%)' % (args.subset, format(subset.size, ','), 100 * subset.size / rb.N_STATES))
     T_t = torch.from_numpy(T.copy()).to(device)
     depth_weight = np.bincount(dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
     by_depth = [np.nonzero(dist == d)[0] for d in range(MAX_DEPTH + 1)]
     chance = float(opt.sum(1).mean() / 9)          # picking a move at random is right this often (several moves can be optimal)
-    n_params = sum(p.numel() for p in make_mlp(layers).parameters())
-    print('device %s   MLP 144-%s-9   %s parameters   %.1f Mbit at 2 bit/param' % (device, '-'.join(map(str, layers)), format(n_params, ','), 2 * n_params / 1e6))
+    n_params = sum(p.numel() for p in make_mlp(layers, n_in).parameters())
+    print('device %s   MLP %d-%s-9 (%s features)   %s parameters   %.1f Mbit at 2 bit/param' % (device, n_in, '-'.join(map(str, layers)), args.features, format(n_params, ','), 2 * n_params / 1e6))
     print('a full policy needs about %.1f Mbit (3,674,160 states × log2 9 bits)' % (rb.N_STATES * np.log2(9) / 1e6))
     print('chance level for fit / held-out accuracy: %.1f%% (a random move is optimal this often)\n' % (100 * chance))
     print('%9s %7s %8s %9s %9s %10s %8s' % ('n states', 'steps', 'fit', 'held-out', 'solve', 'Mbit fit', 'time'))
@@ -84,12 +90,13 @@ def main():
         return s + depth_weight[0]
 
     for n in [int(x) for x in args.n.split(',')]:
-        n = min(n, rb.N_STATES)
-        train = rng.choice(rb.N_STATES, size=n, replace=False) if n < rb.N_STATES else np.arange(rb.N_STATES)
+        pool_n = subset.size if subset is not None else rb.N_STATES
+        n = min(n, pool_n)
+        train = (subset[rng.choice(pool_n, size=n, replace=False)] if subset is not None else rng.choice(rb.N_STATES, size=n, replace=False)) if n < pool_n else (subset if subset is not None else np.arange(rb.N_STATES))
         mask = np.zeros(rb.N_STATES, bool); mask[train] = True
         held = np.nonzero(~mask)[0]
         held = held[rng.integers(held.shape[0], size=min(100000, held.shape[0]))] if held.size else held
-        model = make_mlp(layers).to(device)
+        model = make_mlp(layers, n_in).to(device)
         opt_ = torch.optim.Adam(model.parameters(), lr=args.lr)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt_, T_max=args.steps, eta_min=args.lr / 20)
         train_t = torch.from_numpy(train).to(device)
