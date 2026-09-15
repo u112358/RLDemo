@@ -12,9 +12,14 @@ python play_rubik.py eval                     # success rate / solution length p
 python play_rubik.py solve wggbrymrgrwrbmbwybywmygm
 ```
 
-The terminal shows one coloured progress line (elapsed / remaining time,
-curriculum depth, success, coverage, value error, throughput); pass `--plain`
-or redirect to a file for one line per evaluation instead.
+The terminal shows a pip-style progress bar (elapsed / remaining time against
+the step or minute budget) above a small status panel: curriculum depth with
+its promotion threshold, solve rate on random states, coverage (table) or
+sampled / unseen-solve (network), value error, loss and throughput, each with a
+one-line definition and a sparkline of its recent trend. Curriculum promotions,
+budget exhaustion and saves scroll past above the panel. A legend of every
+metric is printed once at start. Pass `--plain` or redirect to a file for one
+unambiguous line per evaluation instead.
 
 With the server running, http://localhost:8000/ is the training monitor and
 http://localhost:8000/playground.html the playground with the trained policy
@@ -27,7 +32,7 @@ loaded (the "策略解法" button and the real-cube section need it).
 | `rubik.py` | The environment: 6 faces × 4 stickers, 9 actions (`t1 t2 t3 r1 r2 r3 f1 f2 f3` = top / right / front layer turned 90° / 180° / 270°). Also a perfect hash of the 3,674,160 legal states (`encode` / `decode`), a cached transition table and a BFS distance table used as ground truth. `python rubik.py` runs a self-check. |
 | `play_rubik.py` | The learner (`train`, `eval`, `solve`). Writes `cache/q_table.npy`, `cache/policy.npy`, `cache/metrics.json`. |
 | `playground.html` | 3D visualiser of the environment (three.js from cdnjs): same sticker indices, action ids and reward as `rubik.py`; animated moves, sequence playback, scramble, undo, an optimal solver, the trained policy, and a **real-cube mode**: paint the 24 stickers of a physical cube, the page relabels the colours, looks the state up in the policy and walks you through the moves in your cube's colours. |
-| `dashboard.html` | Training monitor: curves for success rate, curriculum depth, coverage and value error, a per-distance breakdown, and a 3D cube that either replays environment #0's most recent complete training episode (start scramble, every move, whether it was solved) or, as a "spectator", scrambles a cube and solves it with the current Q-table so you can watch the policy improve; a speed slider goes from 1 move/s to instant. |
+| `dashboard.html` | Training monitor (dark console look, light toggle): tiles and curves for solve rate, curriculum depth, coverage / sampled states, unseen-solve, value error and loss, each with a written definition and a collapsible 指标说明 panel; per-chart y-axis modes (adaptive / 0–100 % / log), x-axis by step or time, curriculum promotions marked on every curve, a solve-rate × distance × progress heat map, a per-distance breakdown, and a 3D cube that either replays environment #0's most recent complete training episode (start scramble, every move, whether it was solved) or, as a "spectator", scrambles a cube and solves it with the current Q-table so you can watch the policy improve; a speed slider goes from 1 move/s to instant. |
 | `qnet.py`, `qnet_torch.py` | The network agents: numpy MLP (CPU) and PyTorch (Apple MPS / CUDA), same interface as the table trainer. |
 | `cube-model.js`, `cube-3d.js` | Shared browser code: the cube model (moves, `encode`, legality, policy lookup, BFS solver, real-cube relabelling) and the three.js view. |
 
