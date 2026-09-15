@@ -415,6 +415,7 @@ class Progress:
     def __init__(self, args, tr, plain):
         self.args, self.tr, self.plain, self.t0 = args, tr, plain, time.time()
         self.max_k = tr_max_k(tr)
+        self.start_steps = tr.steps
 
     def col(self, name, text):
         return text if self.plain else self.C[name] + text + self.C['off']
@@ -425,8 +426,9 @@ class Progress:
         if a.minutes:
             frac, eta = min(1.0, elapsed / (60 * a.minutes)), 60 * a.minutes - elapsed
         else:
-            frac = min(1.0, rec['step'] / a.steps)
-            eta = (a.steps - rec['step']) / max(rec['sps'], 1)
+            done_steps = rec['step'] - self.start_steps
+            frac = min(1.0, done_steps / a.steps)
+            eta = (a.steps - done_steps) / max(rec['sps'], 1)
         # progress towards the target counts too: show whichever is further along
         goal = min(1.0, rec['success_random'] / a.target) * (rec['K'] / self.max_k)
         frac = max(frac, goal)
@@ -536,10 +538,10 @@ def train(args):
     if args.dashboard:
         serve(args.dashboard, Serving(tr, args.agent))
     progress = Progress(args, tr, plain=args.plain or not enable_ansi())
-    run_start = time.time()                  # --minutes counts this process only, also after --resume
+    run_start, start_steps = time.time(), tr.steps    # --minutes and --steps count this process only, also after --resume
     i = 0
     try:
-        while tr.steps < args.steps and not (args.minutes and time.time() - run_start > 60 * args.minutes):
+        while tr.steps - start_steps < args.steps and not (args.minutes and time.time() - run_start > 60 * args.minutes):
             tr.step()
             i += 1
             if i % args.eval_every == 0:
