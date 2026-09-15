@@ -111,6 +111,13 @@ class TorchNetTrainer:
     def trace(self):
         return self.recorder.last
 
+    def set_lr(self, lr):
+        for g in self.opt.param_groups:
+            g['lr'] = float(lr)
+
+    def lr(self):
+        return float(self.opt.param_groups[0]['lr'])
+
     # ---- helpers ----
     def _depth_hi(self, margin=0):
         if self.K < self.max_k:
@@ -250,7 +257,7 @@ class TorchNetTrainer:
             'success_by_depth': succ, 'mean_len_by_depth': mean_len,
             'optimal_len_by_depth': list(range(1, MAX_DEPTH + 1)),
             'sps': round(self.steps / max(time.time() - self.t0, 1e-9)),
-            'device': str(self.device),
+            'device': str(self.device), 'lr': self.lr(),
         }
         self.metrics.append(rec)
         if self.K < self.max_k and succ[self.K - 1] >= self.promote:

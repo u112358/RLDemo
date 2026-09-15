@@ -145,6 +145,9 @@ class NetTrainer:
     def qvalues(self, idx):
         return self.net.forward(onehot(idx))
 
+    def set_lr(self, lr):
+        self.net.lr = float(lr)
+
     def _depth_hi(self, margin=0):
         # exclusive upper bound of the scramble depth; `margin` lets the training
         # distribution run ahead of the curriculum so that the values one or two

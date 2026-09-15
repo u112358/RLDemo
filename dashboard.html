@@ -269,7 +269,8 @@
     const recs = data.records || [];
     const cfg = data.config || {};
     const r = recs[recs.length - 1];
-    $('cfg').textContent = Object.keys(cfg).length ? (cfg.agent === 'net' ? `神经网络 144-${cfg.hidden}-${cfg.hidden}-9 · lr ${cfg.lr} · batch ${cfg.batch} · max K ${cfg.max_k} · ` : 'Q 表 · ') + `envs ${cfg.envs} · γ ${cfg.gamma} · ε ${cfg.eps} · cap ${cfg.cap} · promote ${cfg.promote}` : '';
+    const arch = cfg.backend === 'torch' ? `144-${String(cfg.layers).replace(/,/g, '-')}-9 (${(r && r.device) || 'torch'})` : `144-${cfg.hidden}-${cfg.hidden}-9`;
+    $('cfg').textContent = Object.keys(cfg).length ? (cfg.agent === 'net' ? `神经网络 ${arch} · lr ${r && r.lr !== undefined ? r.lr.toExponential(1) : cfg.lr} · batch ${cfg.batch} · max K ${cfg.max_k} · ` : 'Q 表 · ') + `envs ${cfg.envs} · γ ${cfg.gamma} · ε ${cfg.eps} · cap ${cfg.cap} · promote ${cfg.promote}` : '';
     if (!r) {
       $('tiles').innerHTML = `<div class="empty" style="grid-column:1/-1">还没有训练记录。启动训练并打开后台：<code>python play_rubik.py train --dashboard 8000</code>，然后访问 <code>http://localhost:8000/</code>。</div>`;
       return;

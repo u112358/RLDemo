@@ -91,6 +91,45 @@ def greedy_rollout(Q, T, s, max_steps=30):
     return length
 
 
+def beam_solve(qf, T, start, width=32, max_depth=30):
+    """Beam search on the value function: keep the ``width`` states with the
+    highest max_a Q(s, a) at every depth, expand all nine children, stop at the
+    solved state.  Returns the action list, or None.  Turns an approximate
+    value function into a solver (DeepCube's insight, in its simplest form)."""
+    if start == rb.SOLVED_INDEX:
+        return []
+    T = np.asarray(T)
+    frontier = np.array([start], dtype=np.int64)
+    layers = []                                     # per depth: (states, parent index, action)
+    seen = {int(start)}
+    for depth in range(max_depth):
+        children = T[frontier]                      # (n, 9)
+        cand = children.reshape(-1)
+        parent = np.repeat(np.arange(frontier.shape[0]), 9)
+        action = np.tile(np.arange(9), frontier.shape[0])
+        keep = np.array([c not in seen for c in cand.tolist()])
+        cand, parent, action = cand[keep], parent[keep], action[keep]
+        if cand.size == 0:
+            return None
+        hit = np.nonzero(cand == rb.SOLVED_INDEX)[0]
+        if hit.size:
+            layers.append((cand, parent, action))
+            i = int(hit[0]); moves = []
+            for states, par, act in reversed(layers):
+                moves.append(int(act[i])); i = int(par[i])
+            return moves[::-1]
+        # dedupe within the layer, score by value, keep the best `width`
+        cand, first = np.unique(cand, return_index=True)
+        parent, action = parent[first], action[first]
+        v = qf(cand).max(axis=1)
+        top = np.argsort(-v)[:width]
+        cand, parent, action = cand[top], parent[top], action[top]
+        seen.update(cand.tolist())
+        layers.append((cand, parent, action))
+        frontier = cand
+    return None
+
+
 class Trainer:
     def __init__(self, n_envs=8192, alpha=1.0, gamma=1.0, eps=0.1, promote=0.97,
                  episode_cap=25, eval_every=50, seed=0):
@@ -449,8 +488,8 @@ def train(args):
         args.target_every = 200 if torch_backend else 1000
     if args.updates_per_step is None:
         args.updates_per_step = 1 if torch_backend else 4
-    if args.agent == 'net' and args.steps == 400_000_000:
-        args.steps = 40_000_000
+    if args.steps is None:
+        args.steps = 10 ** 15 if args.minutes else (40_000_000 if args.agent == 'net' else 400_000_000)
     if args.agent == 'net' and args.eval_every == 50:
         args.eval_every = 50 if torch_backend else 200      # an evaluation costs ~0.7 s with the numpy network
     CONFIG = {k: v for k, v in vars(args).items() if k != 'cmd'}
@@ -504,6 +543,9 @@ def train(args):
             tr.step()
             i += 1
             if i % args.eval_every == 0:
+                if args.lr_final is not None and args.minutes:
+                    frac = min(1.0, (time.time() - run_start) / (60 * args.minutes))
+                    tr.set_lr(args.lr_final + 0.5 * (args.lr - args.lr_final) * (1 + np.cos(np.pi * frac)))
                 rec = tr.evaluate()
                 progress.show(rec)
                 write_metrics(tr.metrics, pt['metrics'])
@@ -565,10 +607,23 @@ def load_policy(agent):
 
 
 def solve(args):
-    policy = load_policy(args.agent)
     a = rb.to_array(args.state)
     idx = rb.encode(a)
     moves = []
+    if args.beam:
+        if args.agent != 'net' or not os.path.exists(NET_PATH):
+            sys.exit('--beam needs the network agent (cache/net.npz)')
+        from qnet import MLP, onehot
+        net = MLP.from_file(NET_PATH)
+        moves = beam_solve(lambda i: net.forward(onehot(i)), rb.transitions(), idx, width=args.beam)
+        if moves is None:
+            print('beam search (width %d) found no solution within 30 moves' % args.beam)
+            return
+        print('%d moves:' % len(moves), ' '.join(rb.ACTIONS[m] for m in moves), '  (%s)' % ' '.join(rb.NOTATION[m] for m in moves))
+        dist = rb.bfs_distances(rb.transitions())
+        print('optimal:', int(dist[idx]))
+        return
+    policy = load_policy(args.agent)
     for _ in range(30):
         if idx == rb.SOLVED_INDEX:
             break
@@ -617,17 +672,23 @@ def evaluate_net(args):
     rec = {'success_by_depth': [], 'mean_len_by_depth': []}
     weight = np.bincount(dist, minlength=MAX_DEPTH + 1) / rb.N_STATES
     total = weight[0]
+    n_eval = 2000 if not args.beam else 200
     for d in range(1, MAX_DEPTH + 1):
         pool = np.nonzero(dist == d)[0]
-        pick = pool[rng.integers(pool.shape[0], size=min(2000, pool.shape[0]))]
-        length = greedy_rollout(qf, T, pick)
+        pick = pool[rng.integers(pool.shape[0], size=min(n_eval, pool.shape[0]))]
+        if args.beam:
+            sols = [beam_solve(qf, T, int(s), width=args.beam) for s in pick]
+            length = np.array([len(m) if m is not None else -1 for m in sols])
+        else:
+            length = greedy_rollout(qf, T, pick)
         ok = length > 0
         rec['success_by_depth'].append(float(ok.mean()))
         rec['mean_len_by_depth'].append(float(length[ok].mean()) if ok.any() else None)
         total += weight[d] * ok.mean()
     sample = rng.integers(rb.N_STATES, size=20000)
     err = float(np.abs(qf(sample).max(axis=1) + dist[sample]).mean())
-    print('success on a uniformly random state %.3f%%   mean |Q + distance| %.4f' % (100 * total, err))
+    print('%s   success on a uniformly random state %.3f%%   mean |Q + distance| %.4f'
+          % ('beam search, width %d' % args.beam if args.beam else 'greedy', 100 * total, err))
     print_table(rec)
 
 
@@ -635,7 +696,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
     t = sub.add_parser('train')
-    t.add_argument('--steps', type=int, default=400_000_000, help='max environment steps')
+    t.add_argument('--steps', type=int, default=None, help='max environment steps (default: unlimited with --minutes, else 400M table / 40M net)')
+    t.add_argument('--lr-final', type=float, default=None, help='net: cosine-decay the learning rate to this value over --minutes')
     t.add_argument('--envs', type=int, default=None, help='parallel environments (default 8192 table / 1024 net)')
     t.add_argument('--alpha', type=float, default=1.0)
     t.add_argument('--gamma', type=float, default=1.0)
@@ -670,9 +732,11 @@ def main():
     e = sub.add_parser('eval')
     e.add_argument('--seed', type=int, default=0)
     e.add_argument('--agent', choices=['table', 'net'], default='table')
+    e.add_argument('--beam', type=int, default=0, metavar='W', help='net: beam search of width W on the value function instead of greedy')
     s = sub.add_parser('solve')
     s.add_argument('state', help='24 letters, e.g. %s' % rb.INIT)
     s.add_argument('--agent', choices=['table', 'net'], default='table')
+    s.add_argument('--beam', type=int, default=0, metavar='W', help='net: beam search of width W')
     v = sub.add_parser('serve', help='serve dashboard.html / playground.html plus the trained agent, no training')
     v.add_argument('--port', type=int, default=8000)
     v.add_argument('--agent', choices=['table', 'net'], default='table')

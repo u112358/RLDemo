@@ -99,7 +99,17 @@ python play_rubik.py train --agent net --backend torch --resume --minutes 30   #
 `--resume` reloads the saved weights, the curriculum depth and the metrics
 history, so a run can be extended without starting over (`--layers` must
 match the saved network). On CUDA, TF32 is on by default and `--amp` adds
-bf16 autocast for the forward passes.
+bf16 autocast for the forward passes. `--lr-final 1e-4` cosine-decays the
+learning rate over `--minutes`, which sharpens the values once the curriculum
+has stalled.
+
+**Search on top of the value function.** A greedy walk needs every Q-value
+to be right; a beam search only needs the solved state to be reachable
+through states the network rates highly. `eval --agent net --beam 32` and
+`solve --agent net --beam 32 <state>` keep the 32 best states per depth and
+expand all of their children (DeepCube's idea in its simplest form). On a
+network whose greedy policy solves 30 % of random states this is what turns
+it into a solver.
 
 `qnet_torch.py` is the same learner on PyTorch: the one-hot features of all
 3,674,160 states (529 MB) and the transition table live on the device, the
