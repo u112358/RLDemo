@@ -16,6 +16,7 @@ that make it worth a GPU:
 
     python play_rubik.py train --agent net --backend torch --dashboard 8000 --minutes 20
 """
+import threading
 import time
 
 import numpy as np
@@ -58,6 +59,17 @@ def make_mlp(layers):
     return nn.Sequential(*mods)
 
 
+def gpu_locked(fn):
+    """Serialise GPU work: MPS (and CUDA streams) must not be driven from two threads at once.
+    The dashboard answers /spectator and /policy.bin from an HTTP thread while training runs;
+    without this Metal aborts with "failed assertion _status < MTLCommandBufferStatusCommitted"."""
+    def wrapped(self, *a, **k):
+        with self.lock:
+            return fn(self, *a, **k)
+    wrapped.__name__, wrapped.__doc__ = fn.__name__, fn.__doc__
+    return wrapped
+
+
 class TorchNetTrainer:
     def __init__(self, layers=(1024, 1024, 512), lr=1e-3, batch=8192, device='auto', all_actions=True,
                  k_margin=2, weight_by_depth=False, promote=0.97, max_k=MAX_DEPTH, k_start=1,
@@ -93,6 +105,7 @@ class TorchNetTrainer:
         self.losses = []
         self.metrics = []
         self.recorder = rb.EpisodeRecorder()
+        self.lock = threading.RLock()
         self.policy_cache = None
         self.t0 = time.time()
         # replay buffer on the device (model-free mode) and a few environments
@@ -111,6 +124,7 @@ class TorchNetTrainer:
     def trace(self):
         return self.recorder.last
 
+    @gpu_locked
     def set_lr(self, lr):
         for g in self.opt.param_groups:
             g['lr'] = float(lr)
@@ -147,6 +161,7 @@ class TorchNetTrainer:
         with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.amp, cache_enabled=False):
             return (model or self.net)(self.feats[idx_t].float()).float()
 
+    @gpu_locked
     def qvalues(self, idx):
         with torch.no_grad():
             out = []
@@ -157,6 +172,7 @@ class TorchNetTrainer:
         return np.concatenate(out) if len(out) > 1 else out[0]
 
     # ---- training ----
+    @gpu_locked
     def step(self):
         # a few environments: live trace for the dashboard (and data in replay mode)
         s_t = torch.from_numpy(self.s).to(self.device)
@@ -231,6 +247,7 @@ class TorchNetTrainer:
             q = self._q(s).gather(1, a[:, None]).squeeze(1)
         self._finish(((q - target) ** 2).mean())
 
+    @gpu_locked
     def evaluate(self, n_per_depth=400, sample_states=20000):
         from play_rubik import greedy_rollout
         succ, mean_len = [], []
@@ -268,6 +285,7 @@ class TorchNetTrainer:
             self.K += 1
         return rec
 
+    @gpu_locked
     def full_policy(self, chunk=262144):
         out = np.empty(rb.N_STATES, dtype=np.uint8)
         with torch.no_grad():
@@ -277,6 +295,7 @@ class TorchNetTrainer:
                 out[lo:hi] = self._q(idx).argmax(1).cpu().numpy()
         return out
 
+    @gpu_locked
     def load(self, net_path):
         """Load weights saved by ``save`` (numpy MLP format); the sizes must match ``--layers``."""
         z = np.load(net_path)
@@ -291,6 +310,7 @@ class TorchNetTrainer:
                 m.bias.copy_(torch.from_numpy(z['arr_%d' % (n + i)]))
         self.target.load_state_dict(self.net.state_dict())
 
+    @gpu_locked
     def save(self, net_path, policy_path):
         # numpy MLP format: W_i (in, out), b_i, sizes  -> serve / eval / solve without torch
         lin = [m for m in self.net if isinstance(m, nn.Linear)]
