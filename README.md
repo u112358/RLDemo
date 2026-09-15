@@ -103,6 +103,9 @@ bf16 autocast for the forward passes. `--lr-final 1e-4` cosine-decays the
 learning rate over `--minutes`, which sharpens the values once the curriculum
 has stalled.
 
+`--tag NAME` (train / eval / solve / serve) keeps an experiment's files in
+`cache/NAME/` so a control run does not overwrite the main one.
+
 **Seen vs unseen.** The set of states sampled during training is saved
 with the network (`cache/net_seen.npy`). `eval --agent net --seen` splits
 every distance into sampled and never-sampled states, reports the greedy

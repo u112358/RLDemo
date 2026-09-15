@@ -56,6 +56,19 @@ NET_SEEN_PATH = os.path.join(CACHE, 'net_seen.npy')          # packed bitmap of 
 MAX_DEPTH = 11
 
 
+def set_tag(tag):
+    """Keep one experiment's files apart from another's: cache/<tag>/... (the
+    transition table stays shared in cache/)."""
+    global Q_PATH, POLICY_PATH, METRICS_PATH, NET_PATH, NET_POLICY_PATH, NET_METRICS_PATH, NET_SEEN_PATH
+    if not tag:
+        return
+    d = os.path.join(CACHE, tag)
+    os.makedirs(d, exist_ok=True)
+    Q_PATH, POLICY_PATH, METRICS_PATH = os.path.join(d, 'q_table.npy'), os.path.join(d, 'policy.npy'), os.path.join(d, 'metrics.json')
+    NET_PATH, NET_POLICY_PATH = os.path.join(d, 'net.npz'), os.path.join(d, 'net_policy.npy')
+    NET_METRICS_PATH, NET_SEEN_PATH = os.path.join(d, 'net_metrics.json'), os.path.join(d, 'net_seen.npy')
+
+
 def paths(agent):
     """Cache files of an agent: 'table' (Q-table) or 'net' (neural network)."""
     if agent == 'net':
@@ -779,7 +792,10 @@ def main():
     v = sub.add_parser('serve', help='serve dashboard.html / playground.html plus the trained agent, no training')
     v.add_argument('--port', type=int, default=8000)
     v.add_argument('--agent', choices=['table', 'net'], default='table')
+    for sp in (t, e, s, v):
+        sp.add_argument('--tag', default='', help='keep this experiment\'s files in cache/<tag>/ (train, eval, solve, serve)')
     args = p.parse_args()
+    set_tag(args.tag)
     {'train': train, 'eval': evaluate, 'solve': solve, 'serve': serve_cmd}[args.cmd](args)
 
 
